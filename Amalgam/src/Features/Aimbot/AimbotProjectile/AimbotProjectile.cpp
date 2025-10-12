@@ -5,6 +5,7 @@
 #include "../../Simulation/ProjectileSimulation/ProjectileSimulation.h"
 #include "../../Ticks/Ticks.h"
 #include "../../Visuals/Visuals.h"
+#include "../../NavBot/BotUtils.h"
 #include "../../NavBot/NavBot.h"
 #include "../AutoAirblast/AutoAirblast.h"
 
@@ -1636,6 +1637,9 @@ bool CAimbotProjectile::Aim(Vec3 vCurAngle, Vec3 vToAngle, Vec3& vOut, int iMeth
 void CAimbotProjectile::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 {
 	bool bUnsure = F::Ticks.IsTimingUnsure() || F::Ticks.GetTicks(H::Entities.GetWeapon());
+	const bool bSmoothType = iMethod == Vars::Aimbot::General::AimTypeEnum::Smooth || iMethod == Vars::Aimbot::General::AimTypeEnum::Assistive;
+	bool bRegisterAssist = false;
+	bool bSyncView = false;
 	switch (iMethod)
 	{
 	case Vars::Aimbot::General::AimTypeEnum::Plain:
@@ -1644,6 +1648,8 @@ void CAimbotProjectile::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		[[fallthrough]];
 	case Vars::Aimbot::General::AimTypeEnum::Smooth:
 	case Vars::Aimbot::General::AimTypeEnum::Assistive:
+		bRegisterAssist = true;
+		bSyncView = true;
 		pCmd->viewangles = vAngle;
 		I::EngineClient->SetViewAngles(vAngle);
 		break;
@@ -1661,6 +1667,11 @@ void CAimbotProjectile::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		pCmd->viewangles = vAngle;
 		G::SilentAngles = true;
 	}
+
+	if (bRegisterAssist)
+		F::BotUtils.RegisterAimAssist(vAngle, bSmoothType);
+	if (bSyncView)
+		F::BotUtils.SyncAimbotView(vAngle);
 }
 
 static inline void CancelShot(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd, int& iLastTickCancel)

@@ -5,6 +5,7 @@
 #include "../../Ticks/Ticks.h"
 #include "../../Visuals/Visuals.h"
 #include "../../Simulation/MovementSimulation/MovementSimulation.h"
+#include "../../NavBot/BotUtils.h"
 #include "../../NavBot/NavBot.h"
 
 std::vector<Target_t> CAimbotHitscan::GetTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
@@ -711,6 +712,9 @@ bool CAimbotHitscan::Aim(Vec3 vCurAngle, Vec3 vToAngle, Vec3& vOut, int iMethod)
 void CAimbotHitscan::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 {
 	bool bUnsure = F::Ticks.IsTimingUnsure() || F::Ticks.GetTicks(H::Entities.GetWeapon());
+	const bool bSmoothType = iMethod == Vars::Aimbot::General::AimTypeEnum::Smooth || iMethod == Vars::Aimbot::General::AimTypeEnum::Assistive;
+	bool bRegisterAssist = false;
+	bool bSyncView = false;
 	switch (iMethod)
 	{
 	case Vars::Aimbot::General::AimTypeEnum::Plain:
@@ -719,6 +723,8 @@ void CAimbotHitscan::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		[[fallthrough]];
 	case Vars::Aimbot::General::AimTypeEnum::Smooth:
 	case Vars::Aimbot::General::AimTypeEnum::Assistive:
+		bRegisterAssist = true;
+		bSyncView = true;
 		pCmd->viewangles = vAngle;
 		I::EngineClient->SetViewAngles(vAngle);
 		break;
@@ -735,6 +741,11 @@ void CAimbotHitscan::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		pCmd->viewangles = vAngle;
 		G::SilentAngles = true;
 	}
+
+	if (bRegisterAssist)
+		F::BotUtils.RegisterAimAssist(vAngle, bSmoothType);
+	if (bSyncView)
+		F::BotUtils.SyncAimbotView(vAngle);
 }
 
 static inline void DrawVisuals(CTFPlayer* pLocal, Target_t& tTarget, int nWeaponID)

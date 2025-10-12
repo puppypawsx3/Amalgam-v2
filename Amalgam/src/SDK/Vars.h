@@ -761,8 +761,8 @@ I dont think this is a good idea to disable simulations completely:
 					VA_LIST("Path", "Areas", "Blacklisted zones"),
 					Path = 1 << 0, Area = 1 << 1, Blacklist = 1 << 2);
 				CVarEnum(LookAtPath, "Look at path", 0, NONE, nullptr,
-					VA_LIST("Off", "Plain", "Silent"),
-					Off, Plain, Silent);
+					VA_LIST("Off", "Plain", "Silent", "Legit", "Legit silent"),
+					Off, Plain, Silent, Legit, LegitSilent);
 
 				CVar(SafePathing, "Safe pathing", false, NOSAVE | DEBUGVAR);
 				CVar(StickyIgnoreTime, "Sticky ignore time", 15, NOSAVE | DEBUGVAR | SLIDER_MIN, 15, 100, 5, "%is");
@@ -824,8 +824,8 @@ I dont think this is a good idea to disable simulations completely:
 					Teammates = 1 << 0, Enemies = 1 << 1);
 
 				CVarEnum(LookAtPath, "Look at path", 0, NONE, nullptr,
-					VA_LIST("Off", "Plain", "Silent"),
-					Off, Plain, Silent);
+					VA_LIST("Off", "Plain", "Silent", "Legit", "Legit silent"),
+					Off, Plain, Silent, Legit, LegitSilent);
 				CVarEnum(LookAtPathMode, "Look at path mode", 0, NONE, nullptr,
 					VA_LIST("Path", "Copy target", "Copy target immediate"),
 					Path, Copy, CopyImmediate);
@@ -859,6 +859,9 @@ I dont think this is a good idea to disable simulations completely:
 			CVarEnum(AutoVotekick, "Auto votekick", 0, NONE, nullptr,
 				VA_LIST("Off", "Random", "Prioritized only"),
 				Off, Random, Prio);
+			CVar(RandomClass, "Autojoin random class", false);
+			CVar(RandomClassInterval, "Random class interval", 5.f, SLIDER_CLAMP | SLIDER_PRECISION, 0.5f, 30.f, 0.5f, "%g min");
+			CVar(RandomClassExclude, "Random excluded classes", 0);
 			CVar(ForceClass, "Autojoin class", 0);
 			CVar(Micspam, "Micspam", false);
 			CVar(NoiseSpam, "Noise spam", false);

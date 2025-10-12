@@ -1173,13 +1173,23 @@ void CNavEngine::followCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 		{
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Off:
 			break;
+		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Plain:
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), false);
+			break;
+		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Legit:
+			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), false);
+			break;
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Silent:
 			if (G::AntiAim)
 				break;
-			[[fallthrough]];
-		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Plain:
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), true);
+			break;
+		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::LegitSilent:
+			if (G::AntiAim)
+				break;
+			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), true);
+			break;
 		default:
-			F::BotUtils.LookAtPath(pCmd, Vec2( moveTarget.x, moveTarget.y ), pLocal->GetEyePosition(), Vars::Misc::Movement::NavEngine::LookAtPath.Value == Vars::Misc::Movement::NavEngine::LookAtPathEnum::Silent);
 			break;
 		}
 	}

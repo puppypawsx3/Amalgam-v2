@@ -5,6 +5,402 @@
 #include "../Aimbot/AimbotGlobal/AimbotGlobal.h"
 #include "../Misc/NamedPipe/NamedPipe.h"
 #include "../Ticks/Ticks.h"
+#include "../../SDK/Helpers/TraceFilters/TraceFilters.h"
+#include "../../Utils/Math/Math.h"
+#include "../../SDK/SDK.h"
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+	float ApproachAngle(float target, float value, float step)
+	{
+		float delta = Math::NormalizeAngle(target - value);
+		if (delta > step)
+			delta = step;
+		else if (delta < -step)
+			delta = -step;
+		float result = value + delta;
+		return Math::NormalizeAngle(result);
+	}
+
+	float AngleDistance(float a, float b)
+	{
+		return fabsf(Math::NormalizeAngle(a - b));
+	}
+
+	float ApproachFloat(float target, float value, float step)
+	{
+		float delta = target - value;
+		if (delta > step)
+			delta = step;
+		else if (delta < -step)
+			delta = -step;
+		return value + delta;
+	}
+
+}
+
+bool CBotUtils::IsLineVisible(const Vec3& from, const Vec3& to) const
+{
+	CGameTrace trace = {};
+	CTraceFilterWorldAndPropsOnly filter = {};
+	SDK::Trace(from, to, MASK_SHOT | CONTENTS_GRATE, &filter, &trace);
+	return trace.fraction > 0.97f;
+}
+
+void CBotUtils::ResetLookState()
+{
+	m_tLookState = {};
+	m_tLookState.scanCooldown = SDK::RandomFloat(1.2f, 2.4f);
+	m_tLookState.scanDuration = SDK::RandomFloat(0.6f, 1.2f);
+	m_tLookState.pathOffsetInterval = SDK::RandomFloat(1.1f, 2.1f);
+	m_tLookState.maxYawSpeed = 210.f;
+	m_tLookState.maxPitchSpeed = 140.f;
+	m_tLookState.curiosityCooldown = SDK::RandomFloat(6.f, 11.f);
+	m_tLookState.curiosityDuration = SDK::RandomFloat(0.9f, 1.5f);
+	m_tLookState.reactionTimer.Update();
+	m_tLookState.scanCooldownTimer.Update();
+	m_tLookState.pathOffsetTimer.Update();
+	m_tLookState.scanHoldTimer.Update();
+	m_tLookState.curiosityTimer.Update();
+	m_tLookState.curiosityCooldownTimer.Update();
+	m_tLookState.externalAngles = {};
+	m_tLookState.externalRelease = 0.f;
+	m_tLookState.externalActive = false;
+	m_tLookState.assistActive = false;
+	m_tLookState.assistAngles = {};
+	m_tLookState.assistExpiry = 0.f;
+	m_tLookState.assistSmooth = false;
+	m_bPendingAssist = false;
+	m_vPendingAssistAngles = {};
+	m_flPendingAssistExpiry = 0.f;
+	m_bPendingAssistSmooth = false;
+}
+
+Vec3 CBotUtils::AdjustForObstacles(CTFPlayer* pLocal, const Vec3& candidateAngles, const Vec3& referenceAngles) const
+{
+	if (!pLocal)
+		return candidateAngles;
+
+	const Vec3 vEye = pLocal->GetEyePosition();
+	Vec3 vDir;
+	Math::AngleVectors(candidateAngles, &vDir);
+	Vec3 vEnd = vEye + vDir * 72.f;
+
+	CGameTrace trace = {};
+	CTraceFilterWorldAndPropsOnly filter = {};
+	SDK::Trace(vEye, vEnd, MASK_SOLID, &filter, &trace);
+
+	if (trace.fraction >= 0.35f)
+		return candidateAngles;
+
+	const float flBlend = std::clamp(1.f - trace.fraction * 2.4f, 0.f, 1.f);
+	Vec3 vAdjusted = candidateAngles.LerpAngle(referenceAngles, flBlend);
+	Math::ClampAngles(vAdjusted);
+	return vAdjusted;
+}
+
+bool CBotUtils::BuildScanTarget(CTFPlayer* pLocal, const Vec3& baseAngles, Vec3& outAngles) const
+{
+	if (!pLocal)
+		return false;
+
+	const Vec3 vEye = pLocal->GetEyePosition();
+
+	for (size_t i = 0; i < std::min<size_t>(m_vCloseEnemies.size(), 3); i++)
+	{
+		const auto& enemy = m_vCloseEnemies[i];
+		if (!enemy.m_pPlayer || !enemy.m_pPlayer->IsAlive())
+			continue;
+
+		Vec3 vTarget = enemy.m_pPlayer->GetCenter();
+		if (vTarget.IsZero())
+			vTarget = enemy.m_pPlayer->GetAbsOrigin() + Vec3(0.f, 0.f, 48.f);
+		else
+			vTarget.z += 8.f;
+
+		if (!IsLineVisible(vEye, vTarget))
+			continue;
+
+		outAngles = Math::CalcAngle(vEye, vTarget);
+		return true;
+	}
+
+	Vec3 forward, right, up;
+	Math::AngleVectors(baseAngles, &forward, &right, &up);
+
+	struct Sample_t
+	{
+		float yaw;
+		float pitch;
+		float distance;
+	};
+
+	Sample_t samples[] = {
+		{ SDK::RandomFloat(24.f, 42.f), SDK::RandomFloat(-6.f, 5.f), SDK::RandomFloat(320.f, 560.f) },
+		{ -SDK::RandomFloat(24.f, 48.f), SDK::RandomFloat(-7.f, 6.f), SDK::RandomFloat(320.f, 560.f) },
+		{ SDK::RandomFloat(-10.f, 10.f), SDK::RandomFloat(8.f, 16.f), SDK::RandomFloat(260.f, 420.f) },
+		{ SDK::RandomFloat(-18.f, 18.f), -SDK::RandomFloat(6.f, 14.f), SDK::RandomFloat(300.f, 520.f) }
+	};
+
+	for (const auto& sample : samples)
+	{
+		Vec3 candidateAngles = baseAngles + Vec3(sample.pitch, sample.yaw, 0.f);
+		Math::ClampAngles(candidateAngles);
+
+		Vec3 dir;
+		Math::AngleVectors(candidateAngles, &dir);
+		Vec3 vEnd = vEye + dir * sample.distance;
+
+		bool bNavClear = !F::NavEngine.IsNavMeshLoaded() || F::NavParser.IsVectorVisibleNavigation(vEye, vEnd);
+		if (!bNavClear)
+			continue;
+
+		if (!IsLineVisible(vEye, vEnd))
+			continue;
+
+		outAngles = candidateAngles;
+		return true;
+	}
+
+	return false;
+}
+
+Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, const Vec3& currentCmdAngles, const CUserCmd* pCmd, float frameTime)
+{
+	auto& state = m_tLookState;
+	Vec3 vDesired = desiredAngles;
+	Vec3 vCmdAngles = currentCmdAngles;
+
+	if (!pLocal)
+		return vCmdAngles.IsZero() ? vDesired : vCmdAngles;
+
+	if (!state.initialized)
+	{
+		ResetLookState();
+		Vec3 vStart = vCmdAngles.IsZero() ? vDesired : vCmdAngles;
+		state.currentAngles = vStart;
+		state.lastRequestedAngles = vDesired;
+		state.scanAngles = vStart;
+		state.externalAngles = vStart;
+		state.initialized = true;
+		return vStart;
+	}
+
+	state.externalRelease = std::max(state.externalRelease - frameTime, 0.f);
+
+	if (m_bPendingAssist)
+	{
+		state.assistAngles = m_vPendingAssistAngles;
+		state.assistExpiry = m_flPendingAssistExpiry;
+		state.assistSmooth = m_bPendingAssistSmooth;
+		state.assistActive = true;
+		m_bPendingAssist = false;
+	}
+
+	if (state.assistActive)
+	{
+		if (I::GlobalVars->curtime > state.assistExpiry)
+		{
+			state.assistActive = false;
+		}
+		else
+		{
+			if (state.assistSmooth)
+			{
+				float flBlendRate = std::clamp(frameTime * 6.f, 0.f, 1.f);
+				vDesired = vDesired.LerpAngle(state.assistAngles, flBlendRate);
+			}
+			else
+			{
+				vDesired = state.assistAngles;
+			}
+
+			state.reactionPending = false;
+			state.scanBlend = std::lerp(state.scanBlend, 0.f, frameTime * 6.f);
+			state.curiosityBlend = std::lerp(state.curiosityBlend, 0.f, frameTime * 6.f);
+			state.curiosityActive = false;
+			state.pathOffset = state.pathOffset.Lerp({}, frameTime * 5.f);
+			state.pathOffsetGoal = state.pathOffset;
+		}
+	}
+
+	const float flCmdDelta = Math::CalcFov(state.currentAngles, vCmdAngles);
+	const bool bManualOverride = pCmd && (std::abs(pCmd->mousedx) > 1 || std::abs(pCmd->mousedy) > 1) && flCmdDelta > 0.2f;
+
+	if (bManualOverride)
+	{
+		state.externalActive = true;
+		state.externalAngles = vCmdAngles;
+		state.currentAngles = vCmdAngles;
+		state.lastRequestedAngles = vDesired;
+		state.scanAngles = vCmdAngles;
+
+		state.reactionPending = false;
+		state.scanBlend = std::lerp(state.scanBlend, 0.f, frameTime * 5.f);
+		state.curiosityBlend = std::lerp(state.curiosityBlend, 0.f, frameTime * 4.f);
+
+		state.pathOffset = state.pathOffset.Lerp({}, frameTime * 5.f);
+		state.pathOffsetGoal = state.pathOffset;
+
+		state.externalRelease = std::min(state.externalRelease + frameTime * 3.f, 0.5f);
+
+		return vCmdAngles;
+	}
+	else if (state.externalActive)
+	{
+		state.externalActive = false;
+		state.externalAngles = vCmdAngles;
+		state.currentAngles = vCmdAngles;
+		state.externalRelease = std::max(state.externalRelease, 0.18f);
+	}
+
+	float flDeltaToLast = Math::CalcFov(state.lastRequestedAngles, vDesired);
+	if (flDeltaToLast > 1.5f)
+	{
+		state.reactionPending = true;
+		state.reactionDelay = SDK::RandomFloat(0.02f, 0.085f) * std::clamp(flDeltaToLast / 40.f, 0.5f, 1.35f);
+		state.reactionTimer.Update();
+	}
+	state.lastRequestedAngles = vDesired;
+
+	if (state.reactionPending)
+	{
+		if (!state.reactionTimer.Check(state.reactionDelay))
+		{
+			vDesired = state.currentAngles;
+		}
+		else
+		{
+			state.reactionPending = false;
+		}
+	}
+
+	if (state.pathOffsetTimer.Check(state.pathOffsetInterval))
+	{
+		state.pathOffsetGoal.x = SDK::RandomFloat(-0.55f, 0.55f);
+		state.pathOffsetGoal.y = SDK::RandomFloat(-1.9f, 1.9f);
+		state.pathOffsetInterval = SDK::RandomFloat(1.0f, 1.9f);
+		state.pathOffsetTimer.Update();
+	}
+	state.pathOffset = state.pathOffset.Lerp(state.pathOffsetGoal, frameTime * 2.4f);
+	const float flReturnBlend = std::clamp(1.f - state.externalRelease * 2.3f, 0.2f, 1.f);
+	Vec3 vWithOffset = vDesired + (state.pathOffset * flReturnBlend);
+	Math::ClampAngles(vWithOffset);
+
+	if (state.scanning)
+	{
+		if (state.scanHoldTimer.Check(state.scanDuration))
+		{
+			state.scanning = false;
+			state.scanCooldown = SDK::RandomFloat(1.4f, 3.0f);
+			state.scanCooldownTimer.Update();
+		}
+		state.curiosityActive = false;
+	}
+	else if (state.scanCooldownTimer.Check(state.scanCooldown))
+	{
+		Vec3 vScanTarget = {};
+		if (BuildScanTarget(pLocal, vWithOffset, vScanTarget))
+		{
+			state.scanning = true;
+			state.scanDuration = SDK::RandomFloat(0.5f, 1.05f);
+			state.scanAngles = vScanTarget;
+			state.scanHoldTimer.Update();
+		}
+		else
+		{
+			state.scanCooldown = SDK::RandomFloat(0.8f, 1.4f);
+			state.scanCooldownTimer.Update();
+		}
+	}
+
+	float flTargetBlend = state.scanning ? 1.f : 0.f;
+	state.scanBlend = std::lerp(state.scanBlend, flTargetBlend, frameTime * 2.6f);
+	if (state.scanBlend > 0.001f)
+	{
+		float flAdjustedBlend = std::clamp(state.scanBlend * flReturnBlend, 0.f, 1.f);
+		vWithOffset = vWithOffset.LerpAngle(state.scanAngles, flAdjustedBlend);
+	}
+	else
+	{
+		state.scanAngles = vWithOffset;
+	}
+
+	float flFocusDelta = Math::CalcFov(state.currentAngles, vWithOffset);
+	if (state.curiosityActive)
+	{
+		if (state.curiosityTimer.Check(state.curiosityDuration))
+		{
+			state.curiosityActive = false;
+			state.curiosityCooldown = SDK::RandomFloat(6.f, 12.f);
+			state.curiosityCooldownTimer.Update();
+		}
+	}
+	else if (!state.scanning && flFocusDelta < 20.f && state.curiosityCooldownTimer.Check(state.curiosityCooldown))
+	{
+		state.curiosityActive = true;
+		state.curiosityDuration = SDK::RandomFloat(0.9f, 1.6f);
+		Vec3 vCuriosity = vWithOffset + Vec3(SDK::RandomFloat(-6.f, 6.f), SDK::RandomFloat(-60.f, 60.f), SDK::RandomFloat(-4.f, 8.f));
+		Math::ClampAngles(vCuriosity);
+		state.curiosityAngles = AdjustForObstacles(pLocal, vCuriosity, vWithOffset);
+		state.curiosityTimer.Update();
+		state.curiosityBlend = 0.f;
+	}
+
+	float flCuriosityTarget = (state.curiosityActive && !state.scanning) ? 1.f : 0.f;
+	state.curiosityBlend = std::lerp(state.curiosityBlend, flCuriosityTarget, frameTime * (state.curiosityActive ? 1.9f : 3.2f));
+	if (state.curiosityBlend > 0.001f)
+	{
+		float flAdjustedCuriosity = std::clamp(state.curiosityBlend * flReturnBlend, 0.f, 1.f);
+		vWithOffset = vWithOffset.LerpAngle(state.curiosityAngles, flAdjustedCuriosity);
+	}
+	else
+	{
+		state.curiosityAngles = vWithOffset;
+	}
+
+	float flExternalDamp = std::clamp(1.f - state.externalRelease * 3.2f, 0.f, 1.f);
+	Vec3 vFinalTarget = vWithOffset;
+	Math::ClampAngles(vFinalTarget);
+	vFinalTarget = AdjustForObstacles(pLocal, vFinalTarget, state.currentAngles);
+
+	const float flBaseSpeed = std::max(6.f, static_cast<float>(Vars::Misc::Movement::BotUtils::LookAtPathSpeed.Value));
+	const float flYawDelta = AngleDistance(vFinalTarget.y, state.currentAngles.y);
+	const float flPitchDelta = AngleDistance(vFinalTarget.x, state.currentAngles.x);
+
+	const float flYawIntensity = Math::SimpleSpline(std::clamp(flYawDelta / 95.f, 0.f, 1.f));
+	const float flPitchIntensity = Math::SimpleSpline(std::clamp(flPitchDelta / 80.f, 0.f, 1.f));
+
+	const float flYawMin = flBaseSpeed * 0.65f;
+	const float flPitchMin = flBaseSpeed * 0.48f;
+	float flYawTargetSpeed = std::lerp(flYawMin, state.maxYawSpeed, flYawIntensity);
+	float flPitchTargetSpeed = std::lerp(flPitchMin, state.maxPitchSpeed, flPitchIntensity);
+
+	const float flAcceleration = 510.f;
+	const float flFrameAccel = flAcceleration * frameTime;
+	state.angularVelocity.x = ApproachFloat(flYawTargetSpeed, state.angularVelocity.x, flFrameAccel);
+	state.angularVelocity.y = ApproachFloat(flPitchTargetSpeed, state.angularVelocity.y, flFrameAccel * 0.75f);
+
+	float flYawStep = state.angularVelocity.x * frameTime;
+	float flPitchStep = state.angularVelocity.y * frameTime;
+
+	Vec3 vPrevAngles = state.currentAngles;
+	Vec3 vUpdated = vPrevAngles;
+	vUpdated.y = ApproachAngle(vFinalTarget.y, vUpdated.y, flYawStep);
+	vUpdated.x = ApproachAngle(vFinalTarget.x, vUpdated.x, flPitchStep);
+	vUpdated.z = 0.f;
+	Math::ClampAngles(vUpdated);
+
+	const float flAppliedYaw = AngleDistance(vUpdated.y, vPrevAngles.y) / std::max(frameTime, 0.0001f);
+	const float flAppliedPitch = AngleDistance(vUpdated.x, vPrevAngles.x) / std::max(frameTime, 0.0001f);
+	state.angularVelocity.x = ApproachFloat(flAppliedYaw, state.angularVelocity.x, flFrameAccel * 0.45f);
+	state.angularVelocity.y = ApproachFloat(flAppliedPitch, state.angularVelocity.y, flFrameAccel * 0.35f);
+
+	state.currentAngles = vUpdated;
+	return vUpdated;
+}
 
 bool CBotUtils::HasMedigunTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
@@ -297,29 +693,93 @@ void CBotUtils::DoSlowAim(Vec3& vWishAngles, float flSpeed, Vec3 vPreviousAngles
 	}
 }
 
-void CBotUtils::LookAtPath(CUserCmd* pCmd, Vec2 vDest, Vec3 vLocalEyePos, bool bSilent)
+void CBotUtils::LookAtPathPlain(CTFPlayer* pLocal, CUserCmd* pCmd, Vec2 vDest, bool bSilent, bool bSmooth)
 {
-	Vec3 vWishAng{ vDest.x, vDest.y, vLocalEyePos.z };
-	vWishAng = Math::CalcAngle(vLocalEyePos, vWishAng);
+	if (!pLocal)
+		return;
 
-	DoSlowAim(vWishAng, static_cast<float>(Vars::Misc::Movement::BotUtils::LookAtPathSpeed.Value), m_vLastAngles);
-	if (bSilent)
-		pCmd->viewangles = vWishAng;
-	else
-		I::EngineClient->SetViewAngles(vWishAng);
-	m_vLastAngles = vWishAng;
+	Vec3 vEye = pLocal->GetEyePosition();
+	Vec3 vWorldTarget{ vDest.x, vDest.y, vEye.z };
+	Vec3 vAngles = Math::CalcAngle(vEye, vWorldTarget);
+	LookAtPathPlain(pLocal, pCmd, vAngles, bSilent, bSmooth);
 }
 
-void CBotUtils::LookAtPath(CUserCmd* pCmd, Vec3 vWishAngles, Vec3 vLocalEyePos, bool bSilent, bool bSmooth)
+void CBotUtils::LookAtPathPlain(CTFPlayer* pLocal, CUserCmd* pCmd, Vec3 vWishAngles, bool bSilent, bool bSmooth)
 {
+	if (!pLocal)
+		return;
+
+	if (m_tLookState.initialized)
+		ResetLookState();
+	Math::ClampAngles(vWishAngles);
 	if (bSmooth)
-		DoSlowAim(vWishAngles, 25.f, m_vLastAngles);
+		DoSlowAim(vWishAngles, static_cast<float>(Vars::Misc::Movement::BotUtils::LookAtPathSpeed.Value), m_vLastAngles);
+	else
+		m_vLastAngles = vWishAngles;
 
 	if (bSilent)
-		pCmd->viewangles = vWishAngles;
+	{
+		pCmd->viewangles = bSmooth ? vWishAngles : m_vLastAngles;
+	}
 	else
-		I::EngineClient->SetViewAngles(vWishAngles);
-	m_vLastAngles = vWishAngles;
+	{
+		Vec3 vApply = bSmooth ? vWishAngles : m_vLastAngles;
+		I::EngineClient->SetViewAngles(vApply);
+		pCmd->viewangles = vApply;
+	}
+	if (bSmooth)
+		m_vLastAngles = vWishAngles;
+}
+
+void CBotUtils::LookAtPath(CTFPlayer* pLocal, CUserCmd* pCmd, Vec2 vDest, bool bSilent)
+{
+	if (!pLocal)
+		return;
+
+	Vec3 vEye = pLocal->GetEyePosition();
+	Vec3 vWorldTarget{ vDest.x, vDest.y, vEye.z };
+	Vec3 vWishAngles = Math::CalcAngle(vEye, vWorldTarget);
+	LookAtPath(pLocal, pCmd, vWishAngles, bSilent, true);
+}
+
+void CBotUtils::LookAtPath(CTFPlayer* pLocal, CUserCmd* pCmd, Vec3 vWishAngles, bool bSilent, bool bSmooth)
+{
+	if (!pLocal)
+		return;
+
+	Math::ClampAngles(vWishAngles);
+	if (!bSmooth)
+	{
+		ResetLookState();
+		if (bSilent)
+			pCmd->viewangles = vWishAngles;
+		else
+		{
+			I::EngineClient->SetViewAngles(vWishAngles);
+			pCmd->viewangles = vWishAngles;
+		}
+		m_vLastAngles = vWishAngles;
+		m_tLookState.currentAngles = vWishAngles;
+		m_tLookState.lastRequestedAngles = vWishAngles;
+		m_tLookState.scanAngles = vWishAngles;
+		m_tLookState.initialized = true;
+		return;
+	}
+
+	float flFrameTime = std::clamp(I::GlobalVars->frametime, 0.001f, 0.05f);
+	Vec3 vResult = UpdateLookState(pLocal, vWishAngles, pCmd->viewangles, pCmd, flFrameTime);
+
+	if (bSilent)
+	{
+		pCmd->viewangles = vResult;
+	}
+	else
+	{
+		I::EngineClient->SetViewAngles(vResult);
+		pCmd->viewangles = vResult;
+	}
+
+	m_vLastAngles = vResult;
 }
 
 void CBotUtils::AutoScope(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
@@ -512,15 +972,32 @@ void CBotUtils::AutoScope(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* p
 
 void CBotUtils::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
-	if ((!Vars::Misc::Movement::NavBot::Enabled.Value && !(Vars::Misc::Movement::FollowBot::Enabled.Value && Vars::Misc::Movement::FollowBot::Targets.Value)) ||
-		!pLocal->IsAlive() || !pWeapon)
+	if (!pLocal || !pWeapon)
 	{
 		Reset();
 		return;
 	}
 
+	if (!pLocal->IsAlive())
+	{
+		Reset();
+		return;
+	}
+
+	const bool bAutomationActive = Vars::Misc::Movement::NavBot::Enabled.Value ||
+		(Vars::Misc::Movement::FollowBot::Enabled.Value && Vars::Misc::Movement::FollowBot::Targets.Value);
+
 	m_tClosestEnemy = UpdateCloseEnemies(pLocal, pWeapon);
 	m_iCurrentSlot = pWeapon->GetSlot();
+
+	if (!bAutomationActive)
+	{
+		// Keep look state alive for legit look-at-path behaviour while disabling automation specific helpers.
+		m_mAutoScopeCache.clear();
+		m_iBestSlot = -1;
+		return;
+	}
+
 	UpdateBestSlot(pLocal);
 
 	if (!F::NavEngine.IsNavMeshLoaded() || (pCmd->buttons & (IN_FORWARD | IN_BACK | IN_MOVERIGHT | IN_MOVELEFT) && !F::Misc.m_bAntiAFK))
@@ -545,6 +1022,32 @@ void CBotUtils::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	}
 }
 
+void CBotUtils::RegisterAimAssist(const Vec3& vAngles, bool bSmooth)
+{
+	m_vPendingAssistAngles = vAngles;
+	m_flPendingAssistExpiry = I::GlobalVars->curtime + (bSmooth ? 0.32f : 0.18f);
+	m_bPendingAssist = true;
+	m_bPendingAssistSmooth = bSmooth;
+}
+
+void CBotUtils::SyncAimbotView(const Vec3& vAngles)
+{
+	m_vLastAngles = vAngles;
+	if (!m_tLookState.initialized)
+		return;
+
+	auto& state = m_tLookState;
+	state.currentAngles = vAngles;
+	state.lastRequestedAngles = vAngles;
+	state.scanAngles = vAngles;
+	state.curiosityAngles = vAngles;
+	state.externalAngles = vAngles;
+	state.scanBlend = std::lerp(state.scanBlend, 0.f, 0.8f);
+	state.curiosityBlend = std::lerp(state.curiosityBlend, 0.f, 0.8f);
+	state.pathOffset = state.pathOffset.Lerp({}, 0.9f);
+	state.pathOffsetGoal = state.pathOffset;
+}
+
 void CBotUtils::Reset()
 {
 	m_mAutoScopeCache.clear();
@@ -552,4 +1055,10 @@ void CBotUtils::Reset()
 	m_tClosestEnemy = {};
 	m_iBestSlot = -1;
 	m_iCurrentSlot = -1;
+	m_vLastAngles = {};
+	m_vPendingAssistAngles = {};
+	m_flPendingAssistExpiry = 0.f;
+	m_bPendingAssist = false;
+	m_bPendingAssistSmooth = false;
+	ResetLookState();
 }

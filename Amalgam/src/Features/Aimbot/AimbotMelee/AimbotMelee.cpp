@@ -5,6 +5,7 @@
 #include "../../EnginePrediction/EnginePrediction.h"
 #include "../../Ticks/Ticks.h"
 #include "../../Visuals/Visuals.h"
+#include "../../NavBot/BotUtils.h"
 
 std::vector<Target_t> CAimbotMelee::GetTargets(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
@@ -454,6 +455,9 @@ bool CAimbotMelee::Aim(Vec3 vCurAngle, Vec3 vToAngle, Vec3& vOut, int iMethod)
 void CAimbotMelee::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 {
 	bool bUnsure = F::Ticks.IsTimingUnsure() || F::Ticks.GetTicks(H::Entities.GetWeapon());
+	const bool bSmoothType = iMethod == Vars::Aimbot::General::AimTypeEnum::Smooth || iMethod == Vars::Aimbot::General::AimTypeEnum::Assistive;
+	bool bRegisterAssist = false;
+	bool bSyncView = false;
 	switch (iMethod)
 	{
 	case Vars::Aimbot::General::AimTypeEnum::Plain:
@@ -462,6 +466,8 @@ void CAimbotMelee::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		[[fallthrough]];
 	case Vars::Aimbot::General::AimTypeEnum::Smooth:
 	case Vars::Aimbot::General::AimTypeEnum::Assistive:
+		bRegisterAssist = true;
+		bSyncView = true;
 		pCmd->viewangles = vAngle;
 		I::EngineClient->SetViewAngles(vAngle);
 		break;
@@ -478,6 +484,11 @@ void CAimbotMelee::Aim(CUserCmd* pCmd, Vec3& vAngle, int iMethod)
 		pCmd->viewangles = vAngle;
 		G::SilentAngles = true;
 	}
+
+	if (bRegisterAssist)
+		F::BotUtils.RegisterAimAssist(vAngle, bSmoothType);
+	if (bSyncView)
+		F::BotUtils.SyncAimbotView(vAngle);
 }
 
 static inline void DrawVisuals(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd, Target_t& tTarget, std::unordered_map<int, std::vector<Vec3>>& mPaths)

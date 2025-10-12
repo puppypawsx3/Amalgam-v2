@@ -134,26 +134,35 @@ bool CFollowBot::IsValidTarget(CTFPlayer* pLocal, CTFPlayer* pPlayer)
 
 void CFollowBot::LookAtPath(CTFPlayer* pLocal, CUserCmd* pCmd, std::deque<Vec3>* vIn, bool bSmooth)
 {
-	bool bSilent = Vars::Misc::Movement::FollowBot::LookAtPath.Value == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Silent;
-	if (!bSilent || !G::AntiAim)
+	auto eMode = Vars::Misc::Movement::FollowBot::LookAtPath.Value;
+	bool bSilent = eMode == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Silent || eMode == Vars::Misc::Movement::FollowBot::LookAtPathEnum::LegitSilent;
+	bool bHumanized = eMode == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Legit || eMode == Vars::Misc::Movement::FollowBot::LookAtPathEnum::LegitSilent;
+	if (bSilent && G::AntiAim)
+		return;
+
+	if (eMode == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Off || G::Attacking == 1)
+		return;
+
+	switch (Vars::Misc::Movement::FollowBot::LookAtPathMode.Value)
 	{
-		if (G::Attacking != 1)
-		{
-			switch (Vars::Misc::Movement::FollowBot::LookAtPathMode.Value)
-			{
-			case Vars::Misc::Movement::FollowBot::LookAtPathModeEnum::Path:
-				F::BotUtils.LookAtPath(pCmd, vIn->front().Get2D(), pLocal->GetEyePosition(), bSilent);
-				break;
-			case Vars::Misc::Movement::FollowBot::LookAtPathModeEnum::Copy:
-				if (!vIn->size())
-					return;
-				[[fallthrough]];
-			default:
-				F::BotUtils.LookAtPath(pCmd, vIn->front(), pLocal->GetEyePosition(), bSilent, bSmooth);
-				break;
-			}
-		}
+	case Vars::Misc::Movement::FollowBot::LookAtPathModeEnum::Path:
+		if (bHumanized)
+			F::BotUtils.LookAtPath(pLocal, pCmd, vIn->front().Get2D(), bSilent);
+		else
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, vIn->front().Get2D(), bSilent, true);
+		break;
+	case Vars::Misc::Movement::FollowBot::LookAtPathModeEnum::Copy:
+		if (!vIn->size())
+			return;
+		[[fallthrough]];
+	default:
+		if (bHumanized)
+			F::BotUtils.LookAtPath(pLocal, pCmd, vIn->front(), bSilent, bSmooth);
+		else
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, vIn->front(), bSilent, bSmooth);
+		break;
 	}
+
 	if (Vars::Misc::Movement::FollowBot::LookAtPathMode.Value == Vars::Misc::Movement::FollowBot::LookAtPathModeEnum::Copy && vIn->size())
 		vIn->pop_front();
 }

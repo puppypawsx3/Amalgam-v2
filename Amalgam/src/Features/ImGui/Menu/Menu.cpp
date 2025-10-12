@@ -1343,6 +1343,16 @@ void CMenu::MenuMisc(int iTab)
 					PopTransparent();
 					FDropdown(Vars::Misc::Automation::ForceClass, { "Off", "Scout", "Soldier", "Pyro", "Demoman", "Heavy", "Engineer", "Medic", "Sniper", "Spy" }, {0,1,3,7,4,6,9,5,2,8}, FDropdownEnum::Left);
 					FDropdown(Vars::Misc::Movement::BotUtils::WeaponSlot, FDropdownEnum::Right);
+					FToggle(Vars::Misc::Automation::RandomClass);
+					PushTransparent(!Vars::Misc::Automation::RandomClass.Value);
+					{
+						FSlider(Vars::Misc::Automation::RandomClassInterval, FSliderEnum::Left);
+						FDropdown(Vars::Misc::Automation::RandomClassExclude,
+							{ "Scout", "Soldier", "Pyro", "Demoman", "Heavy", "Engineer", "Medic", "Sniper", "Spy" },
+							{ 1 << 0, 1 << 2, 1 << 6, 1 << 3, 1 << 5, 1 << 8, 1 << 4, 1 << 1, 1 << 7 },
+							FDropdownEnum::Multi | FDropdownEnum::Right, 0);
+					}
+					PopTransparent();
 					FDropdown(Vars::Misc::Movement::BotUtils::AutoScope);
 					PushTransparent(!Vars::Misc::Movement::BotUtils::AutoScope.Value);
 					{
