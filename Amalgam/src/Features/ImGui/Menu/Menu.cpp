@@ -350,81 +350,6 @@ void CMenu::MenuAimbot(int iTab)
 		}
 		break;
 	}
-	// Legitbot
-	case 2:
-	{
-		if (BeginTable("LegitbotTable", 2))
-		{
-			const bool bLegitEnabledNav = Vars::Misc::Movement::NavEngine::LookAtPath.Value == Vars::Misc::Movement::NavEngine::LookAtPathEnum::Legit
-				|| Vars::Misc::Movement::NavEngine::LookAtPath.Value == Vars::Misc::Movement::NavEngine::LookAtPathEnum::LegitSilent;
-			const bool bLegitEnabledFollow = Vars::Misc::Movement::FollowBot::LookAtPath.Value == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Legit
-				|| Vars::Misc::Movement::FollowBot::LookAtPath.Value == Vars::Misc::Movement::FollowBot::LookAtPathEnum::LegitSilent;
-			const bool bLegitLookActive = bLegitEnabledNav || bLegitEnabledFollow;
-			const bool bLegitFeatures = Vars::Misc::Movement::LegitBot::Enabled.Value;
-
-			/* Column 1 */
-			TableNextColumn();
-			{
-				if (Section("Overview"))
-				{
-					FToggle(Vars::Misc::Movement::LegitBot::Enabled);
-					PushTransparent(!bLegitFeatures);
-					{
-						if (!bLegitLookActive)
-						{
-							PushStyleColor(ImGuiCol_Text, F::Render.Inactive.Value);
-							FText("Requires 'Legit' look at path mode.");
-							PopStyleColor();
-						}
-					}
-					PopTransparent();
-				} EndSection();
-				if (Section("Medic Support"))
-				{
-					PushTransparent(!bLegitFeatures);
-					{
-						FToggle(Vars::Misc::Movement::LegitBot::CallForMedic, FToggleEnum::Left);
-						PushTransparent(!Vars::Misc::Movement::LegitBot::CallForMedic.Value);
-						{
-							FSlider(Vars::Misc::Movement::LegitBot::CallForMedicHealth, FSliderEnum::Left);
-							FSlider(Vars::Misc::Movement::LegitBot::CallForMedicCooldown, FSliderEnum::Right);
-						}
-						PopTransparent();
-					}
-					PopTransparent();
-				} EndSection();
-			}
-
-			/* Column 2 */
-			TableNextColumn();
-			{
-				if (Section("Spy Response"))
-				{
-					PushTransparent(!bLegitFeatures);
-					{
-						FToggle(Vars::Misc::Movement::LegitBot::SnapToUncloak, FToggleEnum::Left);
-						PushTransparent(!Vars::Misc::Movement::LegitBot::SnapToUncloak.Value);
-						{
-							FSlider(Vars::Misc::Movement::LegitBot::SnapDetectionRadius, FSliderEnum::Left);
-						}
-						PopTransparent();
-						FToggle(Vars::Misc::Movement::LegitBot::SpycheckPulse, FToggleEnum::Right);
-						PushTransparent(!Vars::Misc::Movement::LegitBot::SpycheckPulse.Value);
-						{
-							FSlider(Vars::Misc::Movement::LegitBot::SpycheckChance, FSliderEnum::Left);
-							FSlider(Vars::Misc::Movement::LegitBot::SpycheckInterval, FSliderEnum::Right);
-							FSlider(Vars::Misc::Movement::LegitBot::SpycheckRadius, FSliderEnum::Left);
-						}
-						PopTransparent();
-					}
-					PopTransparent();
-				} EndSection();
-			}
-
-			EndTable();
-		}
-		break;
-	}
 	}
 }
 
@@ -1563,6 +1488,81 @@ void CMenu::MenuMisc(int iTab)
 					FToggle(Vars::Misc::Automation::CallVoteSpam, FToggleEnum::Right);
 				} EndSection();
 			}
+			EndTable();
+		}
+		break;
+	}
+	// Legitbot
+	case 2:
+	{
+		if (BeginTable("LegitbotTable", 2))
+		{
+			const bool bLegitEnabledNav = Vars::Misc::Movement::NavEngine::LookAtPath.Value == Vars::Misc::Movement::NavEngine::LookAtPathEnum::Legit
+				|| Vars::Misc::Movement::NavEngine::LookAtPath.Value == Vars::Misc::Movement::NavEngine::LookAtPathEnum::LegitSilent;
+			const bool bLegitEnabledFollow = Vars::Misc::Movement::FollowBot::LookAtPath.Value == Vars::Misc::Movement::FollowBot::LookAtPathEnum::Legit
+				|| Vars::Misc::Movement::FollowBot::LookAtPath.Value == Vars::Misc::Movement::FollowBot::LookAtPathEnum::LegitSilent;
+			const bool bLegitLookActive = bLegitEnabledNav || bLegitEnabledFollow;
+			const bool bLegitFeatures = Vars::Misc::Movement::LegitBot::Enabled.Value;
+
+			/* Column 1 */
+			TableNextColumn();
+			{
+				if (Section("Overview"))
+				{
+					FToggle(Vars::Misc::Movement::LegitBot::Enabled);
+					PushTransparent(!bLegitFeatures);
+					{
+						if (!bLegitLookActive)
+						{
+							PushStyleColor(ImGuiCol_Text, F::Render.Inactive.Value);
+							FText("Requires 'Legit' look at path mode.");
+							PopStyleColor();
+						}
+					}
+					PopTransparent();
+				} EndSection();
+				if (Section("Medic Support"))
+				{
+					PushTransparent(!bLegitFeatures);
+					{
+						FToggle(Vars::Misc::Movement::LegitBot::CallForMedic, FToggleEnum::Left);
+						PushTransparent(!Vars::Misc::Movement::LegitBot::CallForMedic.Value);
+						{
+							FSlider(Vars::Misc::Movement::LegitBot::CallForMedicHealth, FSliderEnum::Left);
+							FSlider(Vars::Misc::Movement::LegitBot::CallForMedicCooldown, FSliderEnum::Right);
+						}
+						PopTransparent();
+					}
+					PopTransparent();
+				} EndSection();
+			}
+
+			/* Column 2 */
+			TableNextColumn();
+			{
+				if (Section("Spy Response"))
+				{
+					PushTransparent(!bLegitFeatures);
+					{
+						FToggle(Vars::Misc::Movement::LegitBot::SnapToUncloak, FToggleEnum::Left);
+						PushTransparent(!Vars::Misc::Movement::LegitBot::SnapToUncloak.Value);
+						{
+							FSlider(Vars::Misc::Movement::LegitBot::SnapDetectionRadius, FSliderEnum::Left);
+						}
+						PopTransparent();
+						FToggle(Vars::Misc::Movement::LegitBot::SpycheckPulse, FToggleEnum::Right);
+						PushTransparent(!Vars::Misc::Movement::LegitBot::SpycheckPulse.Value);
+						{
+							FSlider(Vars::Misc::Movement::LegitBot::SpycheckChance, FSliderEnum::Left);
+							FSlider(Vars::Misc::Movement::LegitBot::SpycheckInterval, FSliderEnum::Right);
+							FSlider(Vars::Misc::Movement::LegitBot::SpycheckRadius, FSliderEnum::Left);
+						}
+						PopTransparent();
+					}
+					PopTransparent();
+				} EndSection();
+			}
+
 			EndTable();
 		}
 		break;
