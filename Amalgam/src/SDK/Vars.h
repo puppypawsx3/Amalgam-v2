@@ -957,6 +957,11 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(FreezeQueue, "Freeze queue", false);
 			CVar(AutoCasualQueue, "Auto casual queue", false);
 			CVar(AutoCasualJoin, "Auto casual join", false);
+			#ifdef TEXTMODE
+			CVar(AutoAbandonIfNoNavmesh, "Auto abandon if no navmesh", true);
+			#else
+			CVar(AutoAbandonIfNoNavmesh, "Auto abandon if no navmesh", false);
+			#endif
 			CVar(QueueDelay, "Queue delay", 5, SLIDER_MIN, 0, 10, 1, "%im");
 			CVar(RQif, "Requeue if...", false); // Dropdown?
 			CVar(RQplt, "Players LT", 12, SLIDER_MIN, 0, 100, 1, "%i");

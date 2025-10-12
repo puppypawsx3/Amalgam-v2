@@ -108,17 +108,33 @@ bool CBotUtils::BuildScanTarget(CTFPlayer* pLocal, const Vec3& baseAngles, Vec3&
 
 	const Vec3 vEye = pLocal->GetEyePosition();
 
+	const float flNow = I::GlobalVars->curtime;
+
 	for (size_t i = 0; i < std::min<size_t>(m_vCloseEnemies.size(), 3); i++)
 	{
 		const auto& enemy = m_vCloseEnemies[i];
-		if (!enemy.m_pPlayer || !enemy.m_pPlayer->IsAlive())
-			continue;
+		Vec3 vTarget = {};
+		const bool bRecentlySeen = enemy.m_flLastSeen > 0.f && (flNow - enemy.m_flLastSeen) <= 0.8f;
 
-		Vec3 vTarget = enemy.m_pPlayer->GetCenter();
-		if (vTarget.IsZero())
-			vTarget = enemy.m_pPlayer->GetAbsOrigin() + Vec3(0.f, 0.f, 48.f);
+		if (enemy.m_pPlayer && enemy.m_pPlayer->IsAlive())
+		{
+			vTarget = enemy.m_pPlayer->GetCenter();
+			if (vTarget.IsZero())
+				vTarget = enemy.m_pPlayer->GetAbsOrigin() + Vec3(0.f, 0.f, 48.f);
+			else
+				vTarget.z += 8.f;
+		}
+		else if (bRecentlySeen && !enemy.m_vLastKnownPos.IsZero())
+		{
+			vTarget = enemy.m_vLastKnownPos;
+		}
 		else
-			vTarget.z += 8.f;
+		{
+			continue;
+		}
+
+		if (vTarget.IsZero())
+			continue;
 
 		if (!IsLineVisible(vEye, vTarget))
 			continue;
@@ -260,7 +276,9 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 	if (flDeltaToLast > 1.5f)
 	{
 		state.reactionPending = true;
-		state.reactionDelay = SDK::RandomFloat(0.02f, 0.085f) * std::clamp(flDeltaToLast / 40.f, 0.5f, 1.35f);
+		float flReactionScale = std::clamp(flDeltaToLast / 40.f, 0.5f, 1.35f);
+		float flBaseDelay = SDK::RandomFloat(0.3f, 0.9f);
+		state.reactionDelay = std::clamp(flBaseDelay * flReactionScale, 0.3f, 0.9f);
 		state.reactionTimer.Update();
 	}
 	state.lastRequestedAngles = vDesired;
@@ -506,7 +524,11 @@ ShouldTargetState_t CBotUtils::ShouldTargetBuilding(CTFPlayer* pLocal, int iEntI
 
 ClosestEnemy_t CBotUtils::UpdateCloseEnemies(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 {
-	m_vCloseEnemies.clear();
+	const float flNow = I::GlobalVars->curtime;
+	constexpr float flRetention = 0.8f;
+
+	for (auto& enemy : m_vCloseEnemies)
+		enemy.m_bUpdated = false;
 
 	for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
 	{
@@ -515,17 +537,63 @@ ClosestEnemy_t CBotUtils::UpdateCloseEnemies(CTFPlayer* pLocal, CTFWeaponBase* p
 		if (!ShouldTarget(pLocal, pWeapon, iEntIndex))
 			continue;
 
+		auto it = std::find_if(m_vCloseEnemies.begin(), m_vCloseEnemies.end(), [iEntIndex](const ClosestEnemy_t& enemy)
+			{
+				return enemy.m_iEntIdx == iEntIndex;
+			});
+
 		auto vOrigin = F::NavParser.GetDormantOrigin(iEntIndex);
 		if (!vOrigin)
+		{
+			if (it != m_vCloseEnemies.end())
+			{
+				it->m_pPlayer = pPlayer;
+			}
 			continue;
+		}
 
-		m_vCloseEnemies.emplace_back(iEntIndex, pPlayer, pLocal->GetAbsOrigin().DistTo(*vOrigin));
+		Vec3 vKnownPos = *vOrigin;
+		vKnownPos.z += 48.f;
+		float flDist = pLocal->GetAbsOrigin().DistTo(vKnownPos);
+
+		if (it != m_vCloseEnemies.end())
+		{
+			it->m_pPlayer = pPlayer;
+			it->m_flDist = flDist;
+			it->m_vLastKnownPos = vKnownPos;
+			it->m_flLastSeen = flNow;
+			it->m_bUpdated = true;
+		}
+		else
+		{
+			ClosestEnemy_t tEntry{};
+			tEntry.m_iEntIdx = iEntIndex;
+			tEntry.m_pPlayer = pPlayer;
+			tEntry.m_flDist = flDist;
+			tEntry.m_vLastKnownPos = vKnownPos;
+			tEntry.m_flLastSeen = flNow;
+			tEntry.m_bUpdated = true;
+			m_vCloseEnemies.push_back(tEntry);
+		}
 	}
-	
+
+	const Vec3 vLocalOrigin = pLocal->GetAbsOrigin();
+	for (auto& enemy : m_vCloseEnemies)
+	{
+		if (!enemy.m_bUpdated && enemy.m_flLastSeen > 0.f && !enemy.m_vLastKnownPos.IsZero())
+			enemy.m_flDist = vLocalOrigin.DistTo(enemy.m_vLastKnownPos);
+		enemy.m_bUpdated = false;
+	}
+
+	m_vCloseEnemies.erase(std::remove_if(m_vCloseEnemies.begin(), m_vCloseEnemies.end(), [flNow](const ClosestEnemy_t& enemy)
+		{
+			return enemy.m_flLastSeen < 0.f || (flNow - enemy.m_flLastSeen) > flRetention;
+		}), m_vCloseEnemies.end());
+
 	std::sort(m_vCloseEnemies.begin(), m_vCloseEnemies.end(), [](const ClosestEnemy_t& a, const ClosestEnemy_t& b) -> bool
-			  {
-				  return a.m_flDist < b.m_flDist;
-			  });
+		  {
+			  return a.m_flDist < b.m_flDist;
+		  });
 
 	if (m_vCloseEnemies.empty())
 		return {};

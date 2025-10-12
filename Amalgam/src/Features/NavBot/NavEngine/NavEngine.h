@@ -217,6 +217,8 @@ public:
 	bool repath_on_fail = false;
 	Vector last_destination;
 	bool m_bPathing = false;
+	Vector m_vLegitLookCache = {};
+	float m_flLegitLookExpire = 0.f;
 
 	// Is the Nav engine ready to run?
 	bool isReady(bool bRoundCheck = false);

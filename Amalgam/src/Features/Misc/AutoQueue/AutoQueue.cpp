@@ -18,6 +18,37 @@ void CAutoQueue::Run()
 	static bool bWasDisconnected = false;
 	static bool bQueuedFromRQif = false;
 
+	const bool bInGameNow = I::EngineClient->IsInGame();
+	const bool bIsLoadingMapNow = I::EngineClient->IsDrawingLoadingImage();
+	const char* pszLevelName = I::EngineClient->GetLevelName();
+	const std::string sLevelName = pszLevelName ? pszLevelName : "";
+
+	if (sLevelName != m_sLastLevelName)
+	{
+		m_sLastLevelName = sLevelName;
+		m_bNavmeshAbandonTriggered = false;
+	}
+
+	if (!Vars::Misc::Queueing::AutoAbandonIfNoNavmesh.Value)
+	{
+		m_bNavmeshAbandonTriggered = false;
+	}
+	else if (bInGameNow && !bIsLoadingMapNow && !m_bNavmeshAbandonTriggered)
+	{
+		const bool bNavMeshUnavailable = F::NavEngine.map && F::NavEngine.map->state == CNavParser::NavState::Unavailable;
+		if (bNavMeshUnavailable)
+		{
+			m_bNavmeshAbandonTriggered = true;
+			SDK::Output("AutoQueue", "No navmesh available for current map, abandoning match", { 255, 100, 100 }, OUTPUT_CONSOLE | OUTPUT_TOAST, -1);
+			I::TFGCClientSystem->AbandonCurrentMatch();
+			bWasInGame = false;
+			bWasDisconnected = true;
+			flLastQueueTime = 0.0f;
+			bQueuedFromRQif = false;
+			return;
+		}
+	}
+
 	// Auto Mann Up queue
 	if (Vars::Misc::Queueing::AutoMannUpQueue.Value)
 	{

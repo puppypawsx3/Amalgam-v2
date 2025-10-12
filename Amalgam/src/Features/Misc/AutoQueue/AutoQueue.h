@@ -18,6 +18,8 @@ private:
 	std::string m_sCurrentServerIP;
 	bool m_bSearchingServers = false;
 	bool m_bConnectedToCommunityServer = false;
+	std::string m_sLastLevelName;
+	bool m_bNavmeshAbandonTriggered = false;
 
 	void RunCommunityQueue();
 	void SearchCommunityServers();

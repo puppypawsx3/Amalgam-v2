@@ -7,6 +7,9 @@ struct ClosestEnemy_t
 	int m_iEntIdx = -1;
 	CTFPlayer* m_pPlayer = nullptr;
 	float m_flDist = -1.f;
+	Vec3 m_vLastKnownPos = {};
+	float m_flLastSeen = -1.f;
+	bool m_bUpdated = false;
 };
 
 enum ShouldTargetState_t

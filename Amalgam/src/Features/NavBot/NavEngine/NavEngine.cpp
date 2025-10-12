@@ -3,6 +3,11 @@
 #include "../../Misc/Misc.h"
 #include "../../FollowBot/FollowBot.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+
 std::optional<Vector> CNavParser::GetDormantOrigin(int iIndex)
 {
 	if (!iIndex)
@@ -786,6 +791,8 @@ void CNavEngine::updateStuckTime()
 void CNavEngine::Reset(bool bForced)
 {
 	cancelPath();
+	m_vLegitLookCache = {};
+	m_flLegitLookExpire = 0.f;
 
 	static std::string sPath = std::filesystem::current_path().string();
 	if (std::string sLevelName = I::EngineClient->GetLevelName(); !sLevelName.empty())
@@ -1166,28 +1173,44 @@ void CNavEngine::followCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 		}
 	}
 
+	const auto eLookSetting = Vars::Misc::Movement::NavEngine::LookAtPath.Value;
+	Vector vLookTarget = moveTarget;
+	const bool bLegitLookMode = eLookSetting == Vars::Misc::Movement::NavEngine::LookAtPathEnum::Legit || eLookSetting == Vars::Misc::Movement::NavEngine::LookAtPathEnum::LegitSilent;
+	if (bLegitLookMode)
+	{
+		if (!moveTarget.IsZero())
+		{
+			m_vLegitLookCache = moveTarget;
+			m_flLegitLookExpire = I::GlobalVars->curtime + 0.8f;
+		}
+		else if (I::GlobalVars->curtime <= m_flLegitLookExpire && !m_vLegitLookCache.IsZero())
+		{
+			vLookTarget = m_vLegitLookCache;
+		}
+	}
+
 	if (G::Attacking != 1)
 	{
 		// Look at path (nav spin) (smooth nav)
-		switch (Vars::Misc::Movement::NavEngine::LookAtPath.Value)
+		switch (eLookSetting)
 		{
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Off:
 			break;
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Plain:
-			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), false);
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(vLookTarget.x, vLookTarget.y), false);
 			break;
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Legit:
-			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), false);
+			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(vLookTarget.x, vLookTarget.y), false);
 			break;
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::Silent:
 			if (G::AntiAim)
 				break;
-			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), true);
+			F::BotUtils.LookAtPathPlain(pLocal, pCmd, Vec2(vLookTarget.x, vLookTarget.y), true);
 			break;
 		case Vars::Misc::Movement::NavEngine::LookAtPathEnum::LegitSilent:
 			if (G::AntiAim)
 				break;
-			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(moveTarget.x, moveTarget.y), true);
+			F::BotUtils.LookAtPath(pLocal, pCmd, Vec2(vLookTarget.x, vLookTarget.y), true);
 			break;
 		default:
 			break;
@@ -1195,6 +1218,76 @@ void CNavEngine::followCrumbs(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCm
 	}
 
 	SDK::WalkTo(pCmd, pLocal, moveTarget);
+
+	if (bLegitLookMode)
+	{
+		auto QuantizeMovementToKeyboard = [](CUserCmd* pCmd)
+		{
+			const float flForward = pCmd->forwardmove;
+			const float flSide = pCmd->sidemove;
+			const float flLength = std::sqrt(flForward * flForward + flSide * flSide);
+			if (flLength < 1.f)
+			{
+				pCmd->forwardmove = 0.f;
+				pCmd->sidemove = 0.f;
+				return;
+			}
+
+			float flScale = std::max(std::abs(flForward), std::abs(flSide)) / 450.f;
+			flScale = std::clamp(flScale, 0.f, 1.f);
+			if (flScale <= 0.f)
+			{
+				pCmd->forwardmove = 0.f;
+				pCmd->sidemove = 0.f;
+				return;
+			}
+
+			const float flNormForward = flForward / flLength;
+			const float flNormSide = flSide / flLength;
+
+			struct MoveOption_t
+			{
+				float forward;
+				float side;
+			};
+
+			constexpr std::array<MoveOption_t, 8> kOptions{
+				MoveOption_t{ 1.f, 0.f },
+				MoveOption_t{ 1.f, 1.f },
+				MoveOption_t{ 0.f, 1.f },
+				MoveOption_t{ -1.f, 1.f },
+				MoveOption_t{ -1.f, 0.f },
+				MoveOption_t{ -1.f, -1.f },
+				MoveOption_t{ 0.f, -1.f },
+				MoveOption_t{ 1.f, -1.f }
+			};
+
+			float flBestDot = -std::numeric_limits<float>::infinity();
+			MoveOption_t tBestOption{ 0.f, 0.f };
+
+			for (const auto& option : kOptions)
+			{
+				const float flOptLength = std::sqrt(option.forward * option.forward + option.side * option.side);
+				if (flOptLength <= 0.f)
+					continue;
+
+				const float flOptForward = option.forward / flOptLength;
+				const float flOptSide = option.side / flOptLength;
+				const float flDot = flNormForward * flOptForward + flNormSide * flOptSide;
+
+				if (flDot > flBestDot)
+				{
+					flBestDot = flDot;
+					tBestOption = option;
+				}
+			}
+
+			pCmd->forwardmove = tBestOption.forward * 450.f * flScale;
+			pCmd->sidemove = tBestOption.side * 450.f * flScale;
+		};
+
+		QuantizeMovementToKeyboard(pCmd);
+	}
 }
 
 void CNavEngine::Render()
