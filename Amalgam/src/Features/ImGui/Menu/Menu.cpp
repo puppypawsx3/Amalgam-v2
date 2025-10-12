@@ -1415,6 +1415,7 @@ void CMenu::MenuMisc(int iTab)
 					{
 						FSlider(Vars::Misc::Movement::BotUtils::LookAtPathSpeed, FSliderEnum::None);
 						FTooltip("Specifies how smooth the viewangles will change when using 'Look at path' in nav engine or followbot");
+						FToggle(Vars::Misc::Movement::BotUtils::LegitMovement, FToggleEnum::Right);
 					}
 					PopTransparent();
 					FDropdown(Vars::Misc::Automation::ForceClass, { "Off", "Scout", "Soldier", "Pyro", "Demoman", "Heavy", "Engineer", "Medic", "Sniper", "Spy" }, {0,1,3,7,4,6,9,5,2,8}, FDropdownEnum::Left);

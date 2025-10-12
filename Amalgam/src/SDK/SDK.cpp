@@ -752,22 +752,8 @@ Vec3 SDK::ComputeMove(const CUserCmd* pCmd, CTFPlayer* pLocal, Vec3& vFrom, Vec3
 
 	Vec3 vSilent = vDiff.To2D();
 	Vec3 vAngle = Math::VectorAngles(vSilent);
-	float flYaw = DEG2RAD(vAngle.y - pCmd->viewangles.y);
+	const float flYaw = DEG2RAD(vAngle.y - pCmd->viewangles.y);
 	const float flPitch = DEG2RAD(vAngle.x - pCmd->viewangles.x);
-
-	// Snap to 8 directions (WASD + diagonals) for more legit movement
-	if (Vars::Misc::Movement::BotUtils::LegitMovement.Value)
-	{
-		// Normalize yaw to 0-360 range
-		float flYawDeg = RAD2DEG(flYaw);
-		while (flYawDeg < 0.f) flYawDeg += 360.f;
-		while (flYawDeg >= 360.f) flYawDeg -= 360.f;
-
-		// Snap to nearest 45-degree angle (8 directions: WASD + diagonals)
-		// 0=forward, 45=forward-right, 90=right, 135=back-right, 180=back, 225=back-left, 270=left, 315=forward-left
-		float flSnappedYaw = std::round(flYawDeg / 45.f) * 45.f;
-		flYaw = DEG2RAD(flSnappedYaw);
-	}
 
 	Vec3 vMove = { cos(flYaw) * 450.f, -sin(flYaw) * 450.f, -cos(flPitch) * 450.f };
 	if (!(I::EngineTrace->GetPointContents(pLocal->GetShootPos()) & CONTENTS_WATER)) // only apply upmove in water
