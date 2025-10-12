@@ -452,13 +452,16 @@ ShouldTargetState_t CBotUtils::ShouldTarget(CTFPlayer* pLocal, CTFWeaponBase* pW
 	if (!pPlayer->IsAlive() || pPlayer == pLocal)
 		return ShouldTargetState_t::INVALID;
 
-#ifdef TEXTMODE
-	if (auto pResource = H::Entities.GetResource(); pResource && F::NamedPipe.IsLocalBot(pResource->m_iAccountID(iPlayerIdx)))
-		return ShouldTargetState_t::DONT_TARGET;
-#endif
+	if (Vars::Misc::Movement::NavBot::RespectRelationships.Value)
+	{
+		if (F::PlayerUtils.IsIgnored(iPlayerIdx) || H::Entities.IsFriend(iPlayerIdx) || H::Entities.InParty(iPlayerIdx))
+			return ShouldTargetState_t::DONT_TARGET;
 
-	if (F::PlayerUtils.IsIgnored(iPlayerIdx))
-		return ShouldTargetState_t::DONT_TARGET;
+#ifdef TEXTMODE
+		if (auto pResource = H::Entities.GetResource(); pResource && F::NamedPipe.IsLocalBot(pResource->m_iAccountID(iPlayerIdx)))
+			return ShouldTargetState_t::DONT_TARGET;
+#endif
+	}
 
 	if (Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Friends && H::Entities.IsFriend(iPlayerIdx)
 		|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Party && H::Entities.InParty(iPlayerIdx)

@@ -201,6 +201,8 @@ bool CAimbotGlobal::ShouldIgnore(CBaseEntity* pEntity, CTFPlayer* pLocal, CTFWea
 	if (bIgnoreDormant && pEntity->IsDormant())
 		return true;
 
+	const bool bRespectRelationships = Vars::Misc::Movement::NavBot::RespectRelationships.Value;
+
 	if (auto pGameRules = I::TFGameRules())
 	{
 		if (pGameRules->m_bTruceActive() && (FriendlyFire() || pLocal->m_iTeamNum() != pEntity->m_iTeamNum()))
@@ -220,7 +222,7 @@ bool CAimbotGlobal::ShouldIgnore(CBaseEntity* pEntity, CTFPlayer* pLocal, CTFWea
 
 #ifdef TEXTMODE
 		auto pResource = H::Entities.GetResource();
-		if (pResource && F::NamedPipe.IsLocalBot(pResource->m_iAccountID(pEntity->entindex())))
+		if (bRespectRelationships && pResource && F::NamedPipe.IsLocalBot(pResource->m_iAccountID(pEntity->entindex())))
 			return true;
 #endif
 
@@ -231,13 +233,19 @@ bool CAimbotGlobal::ShouldIgnore(CBaseEntity* pEntity, CTFPlayer* pLocal, CTFWea
 				return true;
 		}
 
-		if (F::PlayerUtils.IsIgnored(pPlayer->entindex())
-			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Unprioritized && !F::PlayerUtils.IsPrioritized(pPlayer->entindex()))
+		if (bRespectRelationships && F::PlayerUtils.IsIgnored(pPlayer->entindex()))
 			return true;
 
-		if (Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Friends && H::Entities.IsFriend(pPlayer->entindex())
+		if (Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Unprioritized && !F::PlayerUtils.IsPrioritized(pPlayer->entindex()))
+			return true;
+
+		if (bRespectRelationships && (
+			Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Friends && H::Entities.IsFriend(pPlayer->entindex())
 			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Party && H::Entities.InParty(pPlayer->entindex())
-			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Invulnerable && pPlayer->IsInvulnerable() && SDK::AttribHookValue(0, "crit_forces_victim_to_laugh", pWeapon) <= 0
+		))
+			return true;
+
+		if (Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Invulnerable && pPlayer->IsInvulnerable() && SDK::AttribHookValue(0, "crit_forces_victim_to_laugh", pWeapon) <= 0
 			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Invisible && pPlayer->m_flInvisibility() && pPlayer->m_flInvisibility() >= Vars::Aimbot::General::IgnoreInvisible.Value / 100.f
 			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::DeadRinger && pPlayer->m_bFeignDeathReady()
 			|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Taunting && pPlayer->IsTaunting()
@@ -288,11 +296,12 @@ bool CAimbotGlobal::ShouldIgnore(CBaseEntity* pEntity, CTFPlayer* pLocal, CTFWea
 		auto pOwner = pBuilding->m_hBuilder().Get();
 		if (pOwner)
 		{
-			if (F::PlayerUtils.IsIgnored(pOwner->entindex()))
+			if (bRespectRelationships && F::PlayerUtils.IsIgnored(pOwner->entindex()))
 				return true;
 
-			if (Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Friends && H::Entities.IsFriend(pOwner->entindex())
-				|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Party && H::Entities.InParty(pOwner->entindex()))
+			if (bRespectRelationships && (
+				Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Friends && H::Entities.IsFriend(pOwner->entindex())
+				|| Vars::Aimbot::General::Ignore.Value & Vars::Aimbot::General::IgnoreEnum::Party && H::Entities.InParty(pOwner->entindex())))
 				return true;
 		}
 
@@ -309,7 +318,7 @@ bool CAimbotGlobal::ShouldIgnore(CBaseEntity* pEntity, CTFPlayer* pLocal, CTFWea
 			return true;
 
 		auto pOwner = pProjectile->m_hThrower().Get();
-		if (pOwner && F::PlayerUtils.IsIgnored(pOwner->entindex()))
+		if (pOwner && bRespectRelationships && F::PlayerUtils.IsIgnored(pOwner->entindex()))
 			return true;
 
 		if (pProjectile->m_iType() != TF_GL_MODE_REMOTE_DETONATE || !pProjectile->m_bTouched())

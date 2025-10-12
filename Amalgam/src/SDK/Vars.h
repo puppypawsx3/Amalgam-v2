@@ -789,6 +789,19 @@ I dont think this is a good idea to disable simulations completely:
 				CVar(AutoScopeUseCachedResults, "Auto scope use cached results", true, NOSAVE | DEBUGVAR);
 			SUBNAMESPACE_END(BotUtils);
 
+			SUBNAMESPACE_BEGIN(LegitBot)
+				CVar(Enabled, "Legitbot features", true);
+				CVar(CallForMedic, "Call for medic", true);
+				CVar(CallForMedicHealth, "Call medic health threshold", 40.f, SLIDER_CLAMP | SLIDER_PRECISION, 10.f, 75.f, 5.f, "%g%%");
+				CVar(CallForMedicCooldown, "Call medic cooldown", 12.f, SLIDER_CLAMP | SLIDER_PRECISION, 6.f, 30.f, 1.f, "%gs");
+				CVar(SnapToUncloak, "Snap to uncloaking spy", true);
+				CVar(SnapDetectionRadius, "Snap detection radius", 320.f, SLIDER_CLAMP | SLIDER_PRECISION, 100.f, 480.f, 10.f, "%gHU");
+				CVar(SpycheckPulse, "Random spycheck", true);
+				CVar(SpycheckChance, "Spycheck chance", 10, SLIDER_CLAMP, 0, 100, 1, "%i%%");
+				CVar(SpycheckInterval, "Spycheck interval", 10.f, SLIDER_CLAMP | SLIDER_PRECISION, 5.f, 30.f, 1.f, "%gs");
+				CVar(SpycheckRadius, "Spycheck radius", 240.f, SLIDER_CLAMP | SLIDER_PRECISION, 96.f, 480.f, 16.f, "%gHU");
+			SUBNAMESPACE_END(LegitBot);
+
 			SUBNAMESPACE_BEGIN(NavBot)
 				CVar(Enabled, VA_LIST("Enabled", "Navbot enabled"), false);
 				CVarEnum(Blacklist, "Blacklist", 0b0101111, DROPDOWN_MULTI, "None",
@@ -807,6 +820,7 @@ I dont think this is a good idea to disable simulations completely:
 				CVarEnum(Preferences, "Preferences", 0b0, DROPDOWN_MULTI, nullptr,
 					VA_LIST("Get health", "Get ammo", "Reload weapons", "Stalk enemies", "Defend objectives", "Capture objectives", "Help capture objectives", "Escape danger", "Safe capping", "Target sentries", "Auto engie", "##Divider", "Target sentries low range", "Help capture objective friend only", "Dont escape danger with intel", "Group with others"),
 					SearchHealth = 1 << 0, SearchAmmo = 1 << 1, ReloadWeapons = 1 << 2, StalkEnemies = 1 << 3, DefendObjectives = 1 << 4, CaptureObjectives = 1 << 5, HelpCaptureObjectives = 1 << 6, EscapeDanger = 1 << 7, SafeCapping = 1 << 8, TargetSentries = 1 << 9, AutoEngie = 1 << 10, TargetSentriesLowRange = 1 << 11, HelpFriendlyCaptureObjectives = 1 << 12, DontEscapeDangerIntel = 1 << 13, GroupWithOthers = 1 << 14);
+				CVar(RespectRelationships, "Avoid friend/party/local bots", true);
 				
 				CVar(StickyDangerRange, "Sticky danger range", 600, NOSAVE | DEBUGVAR, 50, 1500, 50);
 				CVar(ProjectileDangerRange, "Projectile danger range", 600, NOSAVE | DEBUGVAR, 50, 1500, 50);
