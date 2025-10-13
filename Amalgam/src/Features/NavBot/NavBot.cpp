@@ -658,7 +658,7 @@ void CNavBot::UpdateEnemyBlacklist(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, in
 			float flFullDangerDist = m_tSelectedConfig.m_flMinFullDanger;
 
 			// Not dangerous, Still don't bump
-			if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pPlayer->entindex()))
+			if (F::BotUtils.ShouldTarget(pLocal, pWeapon, pPlayer->entindex()) != ShouldTargetState_t::TARGET)
 			{
 				flSlightDangerDist = PLAYER_WIDTH * 1.2f;
 				flFullDangerDist = PLAYER_WIDTH * 1.2f;
@@ -769,9 +769,17 @@ bool CNavBot::StayNearTarget(int iEntIndex)
 
 int CNavBot::IsStayNearTargetValid(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, int iEntIndex)
 {
-	int iShouldTarget = F::BotUtils.ShouldTarget(pLocal, pWeapon, iEntIndex);
-	int iResult = iEntIndex ? iShouldTarget : 0;
-	return iResult;
+	auto targetState = F::BotUtils.ShouldTarget(pLocal, pWeapon, iEntIndex);
+	if (!iEntIndex)
+		return 0;
+
+	if (targetState == ShouldTargetState_t::TARGET)
+		return iEntIndex;
+
+	if (targetState == ShouldTargetState_t::INVALID)
+		return -1;
+
+	return 0;
 }
 
 std::optional<std::pair<CNavArea*, int>> CNavBot::FindClosestHidingSpot(CNavArea* pArea, std::optional<Vector> vVischeckPoint, int iRecursionCount, int iRecursionIndex)
@@ -839,7 +847,7 @@ bool CNavBot::RunReload(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 	float flBestDist = FLT_MAX;
 	for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
 	{
-		if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()))
+		if (F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()) != ShouldTargetState_t::TARGET)
 			continue;
 
 		float flDist = pEntity->GetAbsOrigin().DistTo(pLocal->GetAbsOrigin());
@@ -947,7 +955,7 @@ bool CNavBot::RunSafeReload(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 			if (pEntity->IsDormant())
 				continue;
 
-			if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()))
+			if (F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()) != ShouldTargetState_t::TARGET)
 				continue;
 
 			float flDist = pEntity->GetAbsOrigin().DistTo(pLocal->GetAbsOrigin());
@@ -1240,9 +1248,17 @@ int CNavBot::IsSnipeTargetValid(CTFPlayer* pLocal, int iBuildingIdx)
 	if (!(Vars::Aimbot::General::Target.Value & Vars::Aimbot::General::TargetEnum::Sentry))
 		return 0;
 
-	int iShouldTarget = F::BotUtils.ShouldTargetBuilding(pLocal, iBuildingIdx);
-	int iResult = iBuildingIdx ? iShouldTarget : 0;
-	return iResult;
+	auto targetState = F::BotUtils.ShouldTargetBuilding(pLocal, iBuildingIdx);
+	if (!iBuildingIdx)
+		return 0;
+
+	if (targetState == ShouldTargetState_t::TARGET)
+		return iBuildingIdx;
+
+	if (targetState == ShouldTargetState_t::INVALID)
+		return -1;
+
+	return 0;
 }
 
 bool CNavBot::SnipeSentries(CTFPlayer* pLocal)
@@ -1296,8 +1312,8 @@ bool CNavBot::SnipeSentries(CTFPlayer* pLocal)
 
 	for (auto pEntity : H::Entities.GetGroup(EGroupType::BUILDINGS_ENEMIES))
 	{
-		// Invalid sentry
-		if (IsSnipeTargetValid(pLocal, pEntity->entindex()))
+		int iTargetValidity = IsSnipeTargetValid(pLocal, pEntity->entindex());
+		if (iTargetValidity <= 0)
 			continue;
 
 		// Succeeded in trying to snipe it
@@ -2215,7 +2231,7 @@ bool CNavBot::Roam(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 				float flBestDist = FLT_MAX;
 				for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
 				{
-					if (!F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()))
+					if (F::BotUtils.ShouldTarget(pLocal, pWeapon, pEntity->entindex()) != ShouldTargetState_t::TARGET)
 						continue;
 
 					float flDist = pEntity->GetAbsOrigin().DistTo(pClosestNav->m_center);
@@ -2589,7 +2605,7 @@ bool CNavBot::EscapeDanger(CTFPlayer* pLocal)
 			bool bIsSafe = true;
 			for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
 			{
-				if (!F::BotUtils.ShouldTarget(pLocal, pLocal->m_hActiveWeapon().Get()->As<CTFWeaponBase>(), pEntity->entindex()))
+				if (F::BotUtils.ShouldTarget(pLocal, pLocal->m_hActiveWeapon().Get()->As<CTFWeaponBase>(), pEntity->entindex()) != ShouldTargetState_t::TARGET)
 					continue;
 
 				// If enemy is too close to this area, mark it as unsafe
