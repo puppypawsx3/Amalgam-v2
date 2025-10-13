@@ -2,6 +2,8 @@
 #include "NavEngine/NavEngine.h"
 #include "../../Utils/Timer/Timer.h"
 
+#include <unordered_map>
+
 struct ClosestEnemy_t
 {	
 	int m_iEntIdx = -1;
@@ -72,6 +74,15 @@ private:
 	float m_flPendingAssistExpiry = 0.f;
 	bool m_bPendingAssist = false;
 	bool m_bPendingAssistSmooth = false;
+	void RunLegitBot(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd);
+	void HandleCallForMedic(CTFPlayer* pLocal);
+	bool HandleSnapToUncloak(CTFPlayer* pLocal, CUserCmd* pCmd);
+	bool HandleSpycheckPulse(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd, bool bAnglesLocked);
+	void UpdateSpyInvisibilityCache(CTFPlayer* pLocal);
+	Timer m_tCallMedicTimer;
+	Timer m_tSpycheckTimer;
+	bool m_bMedicTimerPrimed = false;
+	std::unordered_map<int, float> m_mSpyInvisibility;
 public:
 	int m_iCurrentSlot = -1;
 	int m_iBestSlot = -1;

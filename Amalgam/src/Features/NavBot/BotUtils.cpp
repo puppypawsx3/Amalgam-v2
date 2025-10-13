@@ -78,6 +78,216 @@ void CBotUtils::ResetLookState()
 	m_bPendingAssistSmooth = false;
 }
 
+void CBotUtils::RunLegitBot(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
+{
+	if (!Vars::Misc::Movement::LegitBot::Enabled.Value || !pLocal || !pCmd)
+		return;
+
+	if (!pLocal->IsAlive() || pLocal->IsAGhost())
+	{
+		m_bMedicTimerPrimed = false;
+		m_mSpyInvisibility.clear();
+		return;
+	}
+
+	UpdateSpyInvisibilityCache(pLocal);
+	HandleCallForMedic(pLocal);
+	const bool bAnglesLocked = HandleSnapToUncloak(pLocal, pCmd);
+	HandleSpycheckPulse(pLocal, pWeapon, pCmd, bAnglesLocked);
+}
+
+void CBotUtils::HandleCallForMedic(CTFPlayer* pLocal)
+{
+	if (!Vars::Misc::Movement::LegitBot::CallForMedic.Value || !pLocal || !pLocal->IsAlive())
+	{
+		m_bMedicTimerPrimed = false;
+		return;
+	}
+
+	if (!pLocal->IsInValidTeam() || pLocal->IsTaunting() || pLocal->InCond(TF_COND_HALLOWEEN_KART))
+	{
+		m_bMedicTimerPrimed = false;
+		return;
+	}
+
+	const int iMaxHealth = std::max(pLocal->GetMaxHealth(), 1);
+	const float flThresholdPct = std::clamp(Vars::Misc::Movement::LegitBot::CallForMedicHealth.Value, 1.f, 100.f) * 0.01f;
+	const float flThreshold = std::max(1.f, static_cast<float>(iMaxHealth) * flThresholdPct);
+	const int iHealth = pLocal->m_iHealth();
+
+	if (iHealth > flThreshold)
+	{
+		m_bMedicTimerPrimed = false;
+		return;
+	}
+
+	if (!m_bMedicTimerPrimed)
+	{
+		m_tCallMedicTimer -= Vars::Misc::Movement::LegitBot::CallForMedicCooldown.Value;
+		m_bMedicTimerPrimed = true;
+	}
+
+	const float flCooldown = std::max(Vars::Misc::Movement::LegitBot::CallForMedicCooldown.Value, 0.5f);
+	if (!m_tCallMedicTimer.Run(flCooldown))
+		return;
+
+	I::EngineClient->ClientCmd_Unrestricted("voicemenu 0 0");
+}
+
+bool CBotUtils::HandleSnapToUncloak(CTFPlayer* pLocal, CUserCmd* pCmd)
+{
+	if (!Vars::Misc::Movement::LegitBot::SnapToUncloak.Value || !pLocal || !pCmd)
+		return false;
+
+	if (G::SilentAngles || G::PSilentAngles || pLocal->IsTaunting() || pLocal->InCond(TF_COND_HALLOWEEN_KART))
+		return false;
+
+	const float flRadius = std::max(Vars::Misc::Movement::LegitBot::SnapDetectionRadius.Value, 1.f);
+	const float flRadiusSqr = flRadius * flRadius;
+	const Vec3 vLocalCenter = pLocal->GetCenter();
+
+	CTFPlayer* pBestTarget = nullptr;
+	Vec3 vBestAngles = {};
+	float flBestScore = 0.f;
+
+	for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
+	{
+		auto pSpy = pEntity->As<CTFPlayer>();
+		if (!pSpy || !pSpy->IsAlive() || pSpy->IsAGhost())
+			continue;
+
+		if (pSpy->m_iClass() != TF_CLASS_SPY)
+			continue;
+
+		float flDistSqr = vLocalCenter.DistToSqr(pSpy->GetCenter());
+		if (flDistSqr > flRadiusSqr)
+			continue;
+
+		const float flCloak = std::clamp(pSpy->m_flInvisibility(), 0.f, 1.f);
+		float flPrev = 1.f;
+		if (auto it = m_mSpyInvisibility.find(pSpy->entindex()); it != m_mSpyInvisibility.end())
+			flPrev = it->second;
+		m_mSpyInvisibility[pSpy->entindex()] = flCloak;
+
+		const bool bWasFullCloak = flPrev >= 0.9f;
+		const bool bNowVisible = flCloak <= 0.6f;
+		const bool bDropping = flCloak < flPrev;
+		const bool bUncloakCond = pSpy->InCond(TF_COND_STEALTHED_BLINK) || pSpy->InCond(TF_COND_STEALTHED_USER_BUFF_FADING);
+		if (!(bUncloakCond || (bWasFullCloak && bNowVisible && bDropping)))
+			continue;
+
+		Vec3 vAim = Math::CalcAngle(pLocal->GetShootPos(), pSpy->GetCenter());
+		Math::ClampAngles(vAim);
+
+		const float flScore = (1.f - flCloak) + (flRadiusSqr - flDistSqr) / std::max(flRadiusSqr, 1.f);
+		if (flScore > flBestScore)
+		{
+			flBestScore = flScore;
+			pBestTarget = pSpy;
+			vBestAngles = vAim;
+		}
+	}
+
+	if (!pBestTarget)
+		return false;
+
+	Vec3 vOldAngles = pCmd->viewangles;
+	pCmd->viewangles = vBestAngles;
+	SDK::FixMovement(pCmd, vOldAngles, vBestAngles);
+	return true;
+}
+
+bool CBotUtils::HandleSpycheckPulse(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd, bool bAnglesLocked)
+{
+	if (!Vars::Misc::Movement::LegitBot::SpycheckPulse.Value || !pLocal || !pWeapon || !pCmd)
+		return false;
+
+	if (pLocal->m_iClass() != TF_CLASS_PYRO || pWeapon->GetWeaponID() != TF_WEAPON_FLAMETHROWER)
+		return false;
+
+	if (!pWeapon->HasAmmo() || pLocal->IsTaunting() || pLocal->InCond(TF_COND_HALLOWEEN_KART) || G::Attacking == 1)
+		return false;
+
+	const float flInterval = std::max(Vars::Misc::Movement::LegitBot::SpycheckInterval.Value, 0.2f);
+	if (!m_tSpycheckTimer.Run(flInterval))
+		return false;
+
+	const int iChance = std::clamp(Vars::Misc::Movement::LegitBot::SpycheckChance.Value, 0, 100);
+	if (iChance <= 0)
+		return false;
+	if (SDK::RandomInt(1, 100) > iChance)
+		return false;
+
+	const float flRadius = std::max(Vars::Misc::Movement::LegitBot::SpycheckRadius.Value, 32.f);
+	const float flRadiusSqr = flRadius * flRadius;
+	const Vec3 vLocal = pLocal->GetCenter();
+
+	CTFPlayer* pTarget = nullptr;
+	float flBestDist = flRadiusSqr;
+
+	for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
+	{
+		auto pEnemy = pEntity->As<CTFPlayer>();
+		if (!pEnemy || !pEnemy->IsAlive() || pEnemy->IsAGhost())
+			continue;
+
+		float flDistSqr = vLocal.DistToSqr(pEnemy->GetCenter());
+		if (flDistSqr > flRadiusSqr)
+			continue;
+
+		const bool bSuspicious = pEnemy->m_iClass() == TF_CLASS_SPY
+			|| pEnemy->InCond(TF_COND_DISGUISED)
+			|| pEnemy->InCond(TF_COND_STEALTHED)
+			|| pEnemy->InCond(TF_COND_STEALTHED_USER_BUFF)
+			|| pEnemy->InCond(TF_COND_STEALTHED_USER_BUFF_FADING)
+			|| pEnemy->m_flInvisibility() > 0.f;
+
+		if (!bSuspicious)
+			continue;
+
+		if (flDistSqr < flBestDist)
+		{
+			flBestDist = flDistSqr;
+			pTarget = pEnemy;
+		}
+	}
+
+	Vec3 vOldAngles = pCmd->viewangles;
+	if (!bAnglesLocked)
+	{
+		Vec3 vAim = vOldAngles;
+		if (pTarget)
+			vAim = Math::CalcAngle(pLocal->GetShootPos(), pTarget->GetCenter());
+		else
+			vAim = vAim + Vec3(SDK::RandomFloat(-2.5f, 2.5f), SDK::RandomFloat(-18.f, 18.f), 0.f);
+
+		Math::ClampAngles(vAim);
+		pCmd->viewangles = vAim;
+		SDK::FixMovement(pCmd, vOldAngles, vAim);
+	}
+
+	pCmd->buttons |= IN_ATTACK;
+	return true;
+}
+
+void CBotUtils::UpdateSpyInvisibilityCache(CTFPlayer* pLocal)
+{
+	if (m_mSpyInvisibility.empty())
+		return;
+
+	for (auto it = m_mSpyInvisibility.begin(); it != m_mSpyInvisibility.end(); )
+	{
+		auto pEntity = I::ClientEntityList->GetClientEntity(it->first);
+		auto pPlayer = pEntity ? pEntity->As<CTFPlayer>() : nullptr;
+		if (!pPlayer || !pPlayer->IsAlive() || pPlayer->m_iTeamNum() == pLocal->m_iTeamNum())
+		{
+			it = m_mSpyInvisibility.erase(it);
+			continue;
+		}
+		++it;
+	}
+}
+
 Vec3 CBotUtils::AdjustForObstacles(CTFPlayer* pLocal, const Vec3& candidateAngles, const Vec3& referenceAngles) const
 {
 	if (!pLocal)
@@ -1055,6 +1265,8 @@ void CBotUtils::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		return;
 	}
 
+	RunLegitBot(pLocal, pWeapon, pCmd);
+
 	const bool bAutomationActive = Vars::Misc::Movement::NavBot::Enabled.Value ||
 		(Vars::Misc::Movement::FollowBot::Enabled.Value && Vars::Misc::Movement::FollowBot::Targets.Value);
 
@@ -1131,5 +1343,9 @@ void CBotUtils::Reset()
 	m_flPendingAssistExpiry = 0.f;
 	m_bPendingAssist = false;
 	m_bPendingAssistSmooth = false;
+	m_mSpyInvisibility.clear();
+	m_bMedicTimerPrimed = false;
+	m_tCallMedicTimer.Update();
+	m_tSpycheckTimer.Update();
 	ResetLookState();
 }
