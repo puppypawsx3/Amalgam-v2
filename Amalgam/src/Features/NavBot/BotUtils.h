@@ -35,6 +35,7 @@ private:
 		Timer pathOffsetTimer;
 		Timer curiosityTimer;
 		Timer curiosityCooldownTimer;
+		Timer speedVarianceTimer;
 		Vec3 currentAngles = {};
 		Vec3 lastRequestedAngles = {};
 		Vec3 scanAngles = {};
@@ -44,6 +45,7 @@ private:
 		Vec3 externalAngles = {};
 		Vec3 assistAngles = {};
 		Vec2 angularVelocity = {};
+		float curiosityTurnSign = 1.f;
 		float reactionDelay = 0.f;
 		float scanDuration = 0.75f;
 		float scanCooldown = 2.f;
@@ -51,11 +53,14 @@ private:
 		float scanBlend = 0.f;
 		float maxYawSpeed = 220.f;
 		float maxPitchSpeed = 150.f;
+		float speedVariance = 1.f;
+		float speedVarianceInterval = 0.7f;
 		float curiosityDuration = 1.f;
 		float curiosityCooldown = 8.f;
 		float curiosityBlend = 0.f;
 		float externalRelease = 0.f;
 		float assistExpiry = 0.f;
+		bool curiosityAggressive = false;
 		bool reactionPending = false;
 		bool scanning = false;
 		bool curiosityActive = false;

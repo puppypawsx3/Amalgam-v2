@@ -159,6 +159,10 @@ public:
 		std::unordered_map<CNavArea*, BlacklistReason> free_blacklist;
 		// When the local player stands on one of the nav squares the free blacklist should NOT run
 		bool free_blacklist_blocked = false;
+		int pathRandomSeed = 0;
+		float pathRandomStrength = 0.f;
+		float pathRandomHeatWeight = 0.f;
+		std::unordered_map<CNavArea*, float> pathHeat;
 
 		explicit Map(const char* mapname) : navfile(mapname), mapname(mapname) { state = navfile.m_isOK ? NavState::Active : NavState::Unavailable; }
 
@@ -196,6 +200,10 @@ public:
 			vischeck_cache.clear();
 			connection_stuck_time.clear();
 			free_blacklist.clear();
+			pathHeat.clear();
+			pathRandomSeed = 0;
+			pathRandomStrength = 0.f;
+			pathRandomHeatWeight = 0.f;
 			pather.Reset();
 		}
 

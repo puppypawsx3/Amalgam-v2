@@ -795,6 +795,7 @@ I dont think this is a good idea to disable simulations completely:
 				CVar(CallForMedic, "Call for medic", true);
 				CVar(CallForMedicHealth, "Call medic health threshold", 40.f, SLIDER_CLAMP | SLIDER_PRECISION, 10.f, 75.f, 5.f, "%g%%");
 				CVar(CallForMedicCooldown, "Call medic cooldown", 12.f, SLIDER_CLAMP | SLIDER_PRECISION, 6.f, 30.f, 1.f, "%gs");
+				CVar(PathRandomization, "Path randomization", 0.f, SLIDER_CLAMP | SLIDER_PRECISION, 0.f, 48.f, 1.f, "%g HU");
 				CVar(SnapToUncloak, "Snap to uncloaking spy", true);
 				CVar(SnapDetectionRadius, "Snap detection radius", 320.f, SLIDER_CLAMP | SLIDER_PRECISION, 100.f, 480.f, 10.f, "%gHU");
 				CVar(SpycheckPulse, "Random spycheck", true);

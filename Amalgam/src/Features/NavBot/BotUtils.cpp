@@ -55,8 +55,10 @@ void CBotUtils::ResetLookState()
 	m_tLookState.scanCooldown = SDK::RandomFloat(1.2f, 2.4f);
 	m_tLookState.scanDuration = SDK::RandomFloat(0.6f, 1.2f);
 	m_tLookState.pathOffsetInterval = SDK::RandomFloat(1.1f, 2.1f);
-	m_tLookState.maxYawSpeed = 210.f;
-	m_tLookState.maxPitchSpeed = 140.f;
+	m_tLookState.maxYawSpeed = SDK::RandomFloat(195.f, 255.f);
+	m_tLookState.maxPitchSpeed = SDK::RandomFloat(125.f, 170.f);
+	m_tLookState.speedVariance = SDK::RandomFloat(0.9f, 1.12f);
+	m_tLookState.speedVarianceInterval = SDK::RandomFloat(0.45f, 1.2f);
 	m_tLookState.curiosityCooldown = SDK::RandomFloat(6.f, 11.f);
 	m_tLookState.curiosityDuration = SDK::RandomFloat(0.9f, 1.5f);
 	m_tLookState.reactionTimer.Update();
@@ -65,6 +67,9 @@ void CBotUtils::ResetLookState()
 	m_tLookState.scanHoldTimer.Update();
 	m_tLookState.curiosityTimer.Update();
 	m_tLookState.curiosityCooldownTimer.Update();
+	m_tLookState.speedVarianceTimer.Update();
+	m_tLookState.curiosityTurnSign = SDK::RandomInt(0, 1) ? 1.f : -1.f;
+	m_tLookState.curiosityAggressive = false;
 	m_tLookState.externalAngles = {};
 	m_tLookState.externalRelease = 0.f;
 	m_tLookState.externalActive = false;
@@ -493,6 +498,24 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 	}
 	state.lastRequestedAngles = vDesired;
 
+	const float flBehindDiff = AngleDistance(state.currentAngles.y, vDesired.y);
+	const bool bTargetBehind = flBehindDiff > 110.f;
+	const bool bSevereBehind = flBehindDiff > 160.f;
+	float flBehindSnapStrength = 0.f;
+	if (bTargetBehind)
+	{
+		flBehindSnapStrength = std::clamp((flBehindDiff - 110.f) / 85.f, 0.f, 0.5f);
+		if (bSevereBehind)
+			state.reactionPending = false;
+		state.scanning = false;
+		state.curiosityActive = false;
+		state.curiosityAggressive = false;
+		state.scanBlend = std::lerp(state.scanBlend, 0.f, frameTime * 5.6f);
+		state.curiosityBlend = std::lerp(state.curiosityBlend, 0.f, frameTime * 5.4f);
+		state.curiosityCooldownTimer.Update();
+		state.curiosityCooldown = SDK::RandomFloat(2.4f, 3.8f);
+	}
+
 	if (state.reactionPending)
 	{
 		if (!state.reactionTimer.Check(state.reactionDelay))
@@ -507,8 +530,8 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 
 	if (state.pathOffsetTimer.Check(state.pathOffsetInterval))
 	{
-		state.pathOffsetGoal.x = SDK::RandomFloat(-0.55f, 0.55f);
-		state.pathOffsetGoal.y = SDK::RandomFloat(-1.9f, 1.9f);
+		state.pathOffsetGoal.x = SDK::RandomFloat(-0.35f, 0.35f);
+		state.pathOffsetGoal.y = SDK::RandomFloat(-1.3f, 1.3f);
 		state.pathOffsetInterval = SDK::RandomFloat(1.0f, 1.9f);
 		state.pathOffsetTimer.Update();
 	}
@@ -516,6 +539,16 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 	const float flReturnBlend = std::clamp(1.f - state.externalRelease * 2.3f, 0.2f, 1.f);
 	Vec3 vWithOffset = vDesired + (state.pathOffset * flReturnBlend);
 	Math::ClampAngles(vWithOffset);
+	if (bSevereBehind)
+	{
+		state.pathOffset = state.pathOffset.Lerp({}, frameTime * 5.2f);
+		state.pathOffsetGoal = state.pathOffset;
+		vWithOffset = vDesired;
+	}
+	else if (bTargetBehind && flBehindSnapStrength > 0.f)
+	{
+		vWithOffset = vWithOffset.LerpAngle(vDesired, flBehindSnapStrength);
+	}
 
 	if (state.scanning)
 	{
@@ -562,15 +595,53 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 		if (state.curiosityTimer.Check(state.curiosityDuration))
 		{
 			state.curiosityActive = false;
+			state.curiosityAggressive = false;
 			state.curiosityCooldown = SDK::RandomFloat(6.f, 12.f);
 			state.curiosityCooldownTimer.Update();
 		}
 	}
-	else if (!state.scanning && flFocusDelta < 20.f && state.curiosityCooldownTimer.Check(state.curiosityCooldown))
+	else if (!state.scanning && !bTargetBehind && flFocusDelta < 18.f && state.curiosityCooldownTimer.Check(state.curiosityCooldown))
 	{
 		state.curiosityActive = true;
-		state.curiosityDuration = SDK::RandomFloat(0.9f, 1.6f);
-		Vec3 vCuriosity = vWithOffset + Vec3(SDK::RandomFloat(-6.f, 6.f), SDK::RandomFloat(-60.f, 60.f), SDK::RandomFloat(-4.f, 8.f));
+		state.curiosityAggressive = true;
+		state.curiosityDuration = SDK::RandomFloat(0.7f, 1.3f);
+		Vec3 vCuriosity = {};
+		bool bThreatFocus = false;
+		const Vec3 vEye = pLocal->GetEyePosition();
+		for (const auto& enemy : m_vCloseEnemies)
+		{
+			if (!enemy.m_pPlayer || !enemy.m_pPlayer->IsAlive())
+				continue;
+			if (enemy.m_pPlayer->m_iTeamNum() == pLocal->m_iTeamNum())
+				continue;
+			Vec3 vTarget = enemy.m_pPlayer->GetCenter();
+			if (vTarget.IsZero())
+				vTarget = enemy.m_pPlayer->GetAbsOrigin() + Vec3(0.f, 0.f, 48.f);
+			Vec3 vEnemyAngles = Math::CalcAngle(vEye, vTarget);
+			Math::ClampAngles(vEnemyAngles);
+			if (AngleDistance(vEnemyAngles.y, vWithOffset.y) < 12.f && AngleDistance(vEnemyAngles.x, vWithOffset.x) < 8.f)
+				continue;
+			vCuriosity = vEnemyAngles;
+			bThreatFocus = true;
+			break;
+		}
+		if (!bThreatFocus)
+		{
+			state.curiosityTurnSign = state.curiosityTurnSign >= 0.f ? -1.f : 1.f;
+			float flYawSweep = SDK::RandomFloat(28.f, 46.f);
+			float flPitchSweep = SDK::RandomFloat(-3.f, 5.f);
+			vCuriosity = vWithOffset;
+			vCuriosity.y = Math::NormalizeAngle(vCuriosity.y + state.curiosityTurnSign * flYawSweep);
+			vCuriosity.x = Math::NormalizeAngle(vCuriosity.x + flPitchSweep);
+		}
+		const auto clampAngleDelta = [](float target, float base, float maxDelta)
+		{
+			float delta = Math::NormalizeAngle(target - base);
+			delta = std::clamp(delta, -maxDelta, maxDelta);
+			return Math::NormalizeAngle(base + delta);
+		};
+		vCuriosity.y = clampAngleDelta(vCuriosity.y, vWithOffset.y, 42.f);
+		vCuriosity.x = clampAngleDelta(vCuriosity.x, vWithOffset.x, 16.f);
 		Math::ClampAngles(vCuriosity);
 		state.curiosityAngles = AdjustForObstacles(pLocal, vCuriosity, vWithOffset);
 		state.curiosityTimer.Update();
@@ -578,7 +649,7 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 	}
 
 	float flCuriosityTarget = (state.curiosityActive && !state.scanning) ? 1.f : 0.f;
-	state.curiosityBlend = std::lerp(state.curiosityBlend, flCuriosityTarget, frameTime * (state.curiosityActive ? 1.9f : 3.2f));
+	state.curiosityBlend = std::lerp(state.curiosityBlend, flCuriosityTarget, frameTime * (state.curiosityActive ? 2.2f : 2.8f));
 	if (state.curiosityBlend > 0.001f)
 	{
 		float flAdjustedCuriosity = std::clamp(state.curiosityBlend * flReturnBlend, 0.f, 1.f);
@@ -589,30 +660,142 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 		state.curiosityAngles = vWithOffset;
 	}
 
+	const float flYawDiffToDesired = AngleDistance(vDesired.y, vWithOffset.y);
+	const float flPitchDiffToDesired = AngleDistance(vDesired.x, vWithOffset.x);
+	const float flDesiredPitch = vDesired.x;
+
+	if (flYawDiffToDesired > 45.f)
+	{
+		state.scanning = false;
+		state.curiosityActive = false;
+		state.scanBlend = 0.f;
+		state.curiosityBlend = 0.f;
+	}
+
+	const float flMaxYawDeviation = 35.f;
+	if (flYawDiffToDesired > flMaxYawDeviation)
+	{
+		const float flStep = flYawDiffToDesired - flMaxYawDeviation;
+		vWithOffset.y = ApproachAngle(vDesired.y, vWithOffset.y, flStep);
+	}
+
+	const float flMaxPitchDeviation = 12.f;
+	if (flPitchDiffToDesired > flMaxPitchDeviation)
+	{
+		const float flStep = flPitchDiffToDesired - flMaxPitchDeviation;
+		vWithOffset.x = ApproachAngle(vDesired.x, vWithOffset.x, flStep);
+	}
+
+	if (flYawDiffToDesired > 25.f)
+	{
+		state.scanBlend = std::lerp(state.scanBlend, 0.f, frameTime * 5.2f);
+		state.curiosityBlend = std::lerp(state.curiosityBlend, 0.f, frameTime * 4.6f);
+	}
+
+	const float flAlignmentBias = std::clamp(flYawDiffToDesired / 60.f, 0.f, 0.8f);
+	if (flAlignmentBias > 0.f)
+	{
+		vWithOffset = vWithOffset.LerpAngle(vDesired, flAlignmentBias);
+	}
+
+	if (flDesiredPitch < -5.f || vWithOffset.x < -5.f)
+	{
+		float flDesiredUp = std::min(flDesiredPitch, -5.f);
+		float flSeverity = std::clamp(((-flDesiredUp) - 5.f) / 35.f, 0.f, 1.f);
+		float flMaxUpPitch = std::lerp(-5.f, std::max(flDesiredUp, -22.f), flSeverity * 0.75f);
+		float flBlend = std::clamp(frameTime * 4.2f, 0.f, 1.f);
+		if (vWithOffset.x < flMaxUpPitch)
+			vWithOffset.x = std::lerp(vWithOffset.x, flMaxUpPitch, flBlend);
+	}
+
+	Math::ClampAngles(vWithOffset);
+
+	if (state.speedVarianceTimer.Check(state.speedVarianceInterval))
+	{
+		state.speedVariance = SDK::RandomFloat(0.82f, 1.34f);
+		state.speedVarianceInterval = SDK::RandomFloat(0.45f, 1.3f);
+		state.speedVarianceTimer.Update();
+	}
+
 	float flExternalDamp = std::clamp(1.f - state.externalRelease * 3.2f, 0.f, 1.f);
 	Vec3 vFinalTarget = vWithOffset;
 	Math::ClampAngles(vFinalTarget);
 	vFinalTarget = AdjustForObstacles(pLocal, vFinalTarget, state.currentAngles);
 
-	const float flBaseSpeed = std::max(6.f, static_cast<float>(Vars::Misc::Movement::BotUtils::LookAtPathSpeed.Value));
+	const float flBaseSetting = std::max(6.f, static_cast<float>(Vars::Misc::Movement::BotUtils::LookAtPathSpeed.Value));
 	const float flYawDelta = AngleDistance(vFinalTarget.y, state.currentAngles.y);
 	const float flPitchDelta = AngleDistance(vFinalTarget.x, state.currentAngles.x);
+	float flUrgency = Math::SimpleSpline(std::clamp((flYawDelta + flPitchDelta * 0.45f) / 120.f, 0.f, 1.f));
+	float flBurstScale = std::lerp(0.87f, 1.45f, flUrgency);
+	if (state.curiosityActive)
+		flBurstScale = std::max(flBurstScale, state.curiosityAggressive ? 1.22f : 1.12f);
+	if (bTargetBehind)
+		flBurstScale = std::max(flBurstScale, bSevereBehind ? 1.3f : 1.18f);
+	const float flBaseSpeed = flBaseSetting * state.speedVariance * flBurstScale;
 
 	const float flYawIntensity = Math::SimpleSpline(std::clamp(flYawDelta / 95.f, 0.f, 1.f));
 	const float flPitchIntensity = Math::SimpleSpline(std::clamp(flPitchDelta / 80.f, 0.f, 1.f));
 
-	const float flYawMin = flBaseSpeed * 0.65f;
-	const float flPitchMin = flBaseSpeed * 0.48f;
+	const float flYawMin = flBaseSpeed * 0.6f;
+	const float flPitchMin = flBaseSpeed * 0.45f;
 	float flYawTargetSpeed = std::lerp(flYawMin, state.maxYawSpeed, flYawIntensity);
 	float flPitchTargetSpeed = std::lerp(flPitchMin, state.maxPitchSpeed, flPitchIntensity);
+	flYawTargetSpeed = std::max(flYawTargetSpeed, std::clamp(flYawDelta * 8.5f, flBaseSpeed * 0.9f, state.maxYawSpeed * 1.32f));
+	flPitchTargetSpeed = std::max(flPitchTargetSpeed, std::clamp(flPitchDelta * 7.2f, flBaseSpeed * 0.8f, state.maxPitchSpeed * 1.26f));
+	if (state.curiosityActive)
+	{
+		flYawTargetSpeed = std::max(flYawTargetSpeed, state.maxYawSpeed * (state.curiosityAggressive ? 1.08f : 1.02f));
+		flPitchTargetSpeed = std::max(flPitchTargetSpeed, state.maxPitchSpeed * 1.04f);
+	}
+	if (bTargetBehind)
+	{
+		float flYawBoost = bSevereBehind ? 1.18f : 1.1f;
+		float flPitchBoost = bSevereBehind ? 1.15f : 1.08f;
+		flYawTargetSpeed = std::max(flYawTargetSpeed, state.maxYawSpeed * flYawBoost);
+		flPitchTargetSpeed = std::max(flPitchTargetSpeed, state.maxPitchSpeed * flPitchBoost);
+	}
 
-	const float flAcceleration = 510.f;
-	const float flFrameAccel = flAcceleration * frameTime;
-	state.angularVelocity.x = ApproachFloat(flYawTargetSpeed, state.angularVelocity.x, flFrameAccel);
-	state.angularVelocity.y = ApproachFloat(flPitchTargetSpeed, state.angularVelocity.y, flFrameAccel * 0.75f);
+	const float flVelocityBlend = std::clamp(frameTime * (3.2f + flUrgency * 6.5f), 0.f, 1.f);
+	state.angularVelocity.x = std::lerp(state.angularVelocity.x, flYawTargetSpeed, flVelocityBlend);
+	state.angularVelocity.y = std::lerp(state.angularVelocity.y, flPitchTargetSpeed, flVelocityBlend * 0.9f);
+	state.angularVelocity.x = std::clamp(state.angularVelocity.x, 0.f, state.maxYawSpeed * 1.35f);
+	state.angularVelocity.y = std::clamp(state.angularVelocity.y, 0.f, state.maxPitchSpeed * 1.3f);
 
-	float flYawStep = state.angularVelocity.x * frameTime;
-	float flPitchStep = state.angularVelocity.y * frameTime;
+	float flAdaptiveYawCatch = std::clamp(frameTime * (0.85f + flUrgency * 2.6f), 0.f, 0.85f);
+	float flAdaptivePitchCatch = std::clamp(frameTime * (0.7f + flUrgency * 1.8f), 0.f, 0.75f);
+	if (state.curiosityActive)
+	{
+		float flAggressiveYawCatch = std::clamp(frameTime * (0.95f + flUrgency * 1.9f), 0.f, 0.82f);
+		float flAggressivePitchCatch = std::clamp(frameTime * (0.82f + flUrgency * 1.5f), 0.f, 0.78f);
+		flAdaptiveYawCatch = std::max(flAdaptiveYawCatch, flAggressiveYawCatch);
+		flAdaptivePitchCatch = std::max(flAdaptivePitchCatch, flAggressivePitchCatch);
+	}
+	if (bTargetBehind)
+	{
+		float flBehindYawCatch = std::clamp(frameTime * (1.15f + flUrgency * (bSevereBehind ? 3.5f : 3.f)), 0.f, 0.9f);
+		float flBehindPitchCatch = std::clamp(frameTime * (0.95f + flUrgency * (bSevereBehind ? 2.4f : 2.f)), 0.f, 0.84f);
+		flAdaptiveYawCatch = std::max(flAdaptiveYawCatch, flBehindYawCatch);
+		flAdaptivePitchCatch = std::max(flAdaptivePitchCatch, flBehindPitchCatch);
+	}
+	float flYawStep = std::max(state.angularVelocity.x * frameTime, flYawDelta * flAdaptiveYawCatch);
+	float flPitchStep = std::max(state.angularVelocity.y * frameTime, flPitchDelta * flAdaptivePitchCatch);
+	if (state.curiosityActive)
+	{
+		flYawStep = std::max(flYawStep, flYawDelta * std::clamp(frameTime * 3.1f, 0.f, 0.72f));
+		flPitchStep = std::max(flPitchStep, flPitchDelta * std::clamp(frameTime * 2.4f, 0.f, 0.78f));
+	}
+	if (bTargetBehind)
+	{
+		float flYawAccel = std::clamp(frameTime * (bSevereBehind ? 4.1f : 3.5f), 0.f, 0.82f);
+		float flPitchAccel = std::clamp(frameTime * (bSevereBehind ? 2.9f : 2.5f), 0.f, 0.8f);
+		flYawStep = std::max(flYawStep, flYawDelta * flYawAccel);
+		flPitchStep = std::max(flPitchStep, flPitchDelta * flPitchAccel);
+	}
+
+	if (flYawDelta > 75.f)
+		flYawStep = std::max(flYawStep, flYawDelta * std::clamp(frameTime * 3.8f, 0.f, 0.95f));
+	if (flPitchDelta > 55.f)
+		flPitchStep = std::max(flPitchStep, flPitchDelta * std::clamp(frameTime * 2.4f, 0.f, 0.8f));
 
 	Vec3 vPrevAngles = state.currentAngles;
 	Vec3 vUpdated = vPrevAngles;
@@ -623,8 +806,11 @@ Vec3 CBotUtils::UpdateLookState(CTFPlayer* pLocal, const Vec3& desiredAngles, co
 
 	const float flAppliedYaw = AngleDistance(vUpdated.y, vPrevAngles.y) / std::max(frameTime, 0.0001f);
 	const float flAppliedPitch = AngleDistance(vUpdated.x, vPrevAngles.x) / std::max(frameTime, 0.0001f);
-	state.angularVelocity.x = ApproachFloat(flAppliedYaw, state.angularVelocity.x, flFrameAccel * 0.45f);
-	state.angularVelocity.y = ApproachFloat(flAppliedPitch, state.angularVelocity.y, flFrameAccel * 0.35f);
+	const float flFeedbackBlend = std::clamp(frameTime * 4.6f, 0.f, 1.f);
+	state.angularVelocity.x = std::lerp(state.angularVelocity.x, flAppliedYaw, flFeedbackBlend);
+	state.angularVelocity.y = std::lerp(state.angularVelocity.y, flAppliedPitch, flFeedbackBlend * 0.85f);
+	state.angularVelocity.x = std::clamp(state.angularVelocity.x, 0.f, state.maxYawSpeed * 1.35f);
+	state.angularVelocity.y = std::clamp(state.angularVelocity.y, 0.f, state.maxPitchSpeed * 1.3f);
 
 	state.currentAngles = vUpdated;
 	return vUpdated;
@@ -1048,7 +1234,8 @@ void CBotUtils::LookAtPath(CTFPlayer* pLocal, CUserCmd* pCmd, Vec3 vWishAngles, 
 		return;
 	}
 
-	float flFrameTime = std::clamp(I::GlobalVars->frametime, 0.001f, 0.05f);
+	const float flTickInterval = std::max(I::GlobalVars->interval_per_tick, 0.001f);
+	float flFrameTime = std::clamp(std::max(I::GlobalVars->frametime, flTickInterval), 0.008f, 0.05f);
 	Vec3 vResult = UpdateLookState(pLocal, vWishAngles, pCmd->viewangles, pCmd, flFrameTime);
 
 	if (bSilent)

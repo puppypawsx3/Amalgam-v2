@@ -6,7 +6,34 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <numbers>
+#include <unordered_set>
+
+namespace
+{
+	constexpr float kNoiseUnitScale = 1.f / 16777215.f;
+
+	float SampleConnectionNoise(const CNavParser::Map& map, CNavArea* from, CNavArea* to)
+	{
+		if (map.pathRandomSeed == 0 || map.pathRandomStrength <= 0.f || !from || !to)
+			return 0.f;
+
+		uint64_t key = static_cast<uint64_t>(map.pathRandomSeed);
+		key ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(from)) + 0x9e3779b97f4a7c15ULL;
+		key ^= static_cast<uint64_t>(reinterpret_cast<uintptr_t>(to)) + 0xbf58476d1ce4e5b9ULL;
+		key ^= key >> 33;
+		key *= 0xff51afd7ed558ccdULL;
+		key ^= key >> 33;
+		key *= 0xc4ceb9fe1a85ec53ULL;
+		key ^= key >> 33;
+
+		float normalized = static_cast<float>(key & 0xFFFFFFULL) * kNoiseUnitScale;
+		float centered = normalized * 2.f - 1.f;
+		return centered * map.pathRandomStrength;
+	}
+}
 
 std::optional<Vector> CNavParser::GetDormantOrigin(int iIndex)
 {
@@ -76,6 +103,22 @@ bool CNavParser::IsVectorVisibleNavigation(Vector from, Vector to, unsigned int 
 void CNavParser::Map::AdjacentCost(void* main, std::vector<micropather::StateCost>* adjacent)
 {
 	CNavArea& tArea = *reinterpret_cast<CNavArea*>(main);
+	auto applyCostModifiers = [&](CNavArea* fromArea, CNavArea* toArea, float baseCost)
+	{
+		if (pathRandomStrength > 0.f)
+		{
+			float noise = SampleConnectionNoise(*this, fromArea, toArea);
+			float scale = std::clamp(1.f + noise, 0.3f, 2.4f);
+			float heatPenalty = 0.f;
+			if (pathRandomHeatWeight > 0.f && !pathHeat.empty() && toArea)
+			{
+				if (auto it = pathHeat.find(toArea); it != pathHeat.end())
+					heatPenalty = std::clamp(it->second * pathRandomHeatWeight, 0.f, 12.f);
+			}
+			return std::max(baseCost * scale + heatPenalty, baseCost * 0.25f);
+		}
+		return baseCost;
+	};
 	for (NavConnect& tConnection : tArea.m_connections)
 	{
 		// An area being entered twice means it is blacklisted from entry entirely
@@ -108,7 +151,8 @@ void CNavParser::Map::AdjacentCost(void* main, std::vector<micropather::StateCos
 		{
 			if (vischeck_cache[key].vischeck_state)
 			{
-				const float cost = tConnection.area->m_center.DistTo(tArea.m_center);
+				float cost = tConnection.area->m_center.DistTo(tArea.m_center);
+				cost = applyCostModifiers(&tArea, tConnection.area, cost);
 				adjacent->push_back(micropather::StateCost{ reinterpret_cast<void*>(tConnection.area), cost });
 			}
 		}
@@ -120,7 +164,8 @@ void CNavParser::Map::AdjacentCost(void* main, std::vector<micropather::StateCos
 			{
 				vischeck_cache[key] = CachedConnection{ TICKCOUNT_TIMESTAMP(60), 1 };
 
-				const float cost = points.next.DistTo(points.current);
+				float cost = points.next.DistTo(points.current);
+				cost = applyCostModifiers(&tArea, tConnection.area, cost);
 				adjacent->push_back(micropather::StateCost{ reinterpret_cast<void*>(tConnection.area), cost });
 			}
 			else
@@ -621,6 +666,67 @@ bool CNavEngine::navTo(const Vector& destination, int priority, bool should_repa
 
 	crumbs.clear();
 
+	const float flRandomization = std::clamp(Vars::Misc::Movement::LegitBot::PathRandomization.Value, 0.f, 96.f);
+	const bool bRandomizePath = flRandomization > 0.f;
+	if (map)
+	{
+		if (bRandomizePath)
+		{
+			const float flRatio = flRandomization / 96.f;
+			const float flCurve = static_cast<float>(std::pow(flRatio, 1.18f));
+			const float flStrength = std::lerp(0.06f, 0.4f, std::clamp(flCurve, 0.f, 1.f));
+			const float flHeatWeight = std::clamp(flRatio, 0.f, 1.f);
+			map->pathRandomStrength = flStrength;
+			map->pathRandomHeatWeight = flHeatWeight;
+			map->pathRandomSeed = SDK::RandomInt(1, std::numeric_limits<int>::max() - 2);
+			map->pather.Reset();
+			if (map->pathRandomHeatWeight > 0.f && !map->pathHeat.empty())
+			{
+				const float flDecay = std::clamp(1.f - map->pathRandomHeatWeight * 0.35f, 0.58f, 0.92f);
+				for (auto it = map->pathHeat.begin(); it != map->pathHeat.end(); )
+				{
+					it->second *= flDecay;
+					if (it->second < 0.05f)
+						it = map->pathHeat.erase(it);
+					else
+						++it;
+				}
+			}
+		}
+		else if (map->pathRandomStrength > 0.f || map->pathRandomHeatWeight > 0.f)
+		{
+			map->pathRandomStrength = 0.f;
+			map->pathRandomHeatWeight = 0.f;
+			map->pathRandomSeed = 0;
+			map->pathHeat.clear();
+			map->pather.Reset();
+		}
+	}
+
+	auto randomizeCrumb = [&](CNavParser::Crumb& crumb, CNavArea* pArea)
+	{
+		if (!bRandomizePath || !pArea || !crumb.navarea || crumb.requiresDrop)
+			return;
+
+		const float flWidth = std::fabs(pArea->m_seCorner.x - pArea->m_nwCorner.x);
+		const float flHeight = std::fabs(pArea->m_seCorner.y - pArea->m_nwCorner.y);
+		const float flHalfExtent = std::max(0.f, std::min(flWidth, flHeight) * 0.5f - HALF_PLAYER_WIDTH * 0.2f);
+		if (flHalfExtent <= 1.f)
+			return;
+
+		const float flOffsetMax = std::min(flRandomization, flHalfExtent);
+		const float flAngleDeg = SDK::RandomFloat(0.f, 360.f);
+		const float flRadius = SDK::RandomFloat(0.f, flOffsetMax);
+		const float flAngleRad = flAngleDeg * (std::numbers::pi_v<float> / 180.f);
+		Vector vOffset{ std::cos(flAngleRad) * flRadius, std::sin(flAngleRad) * flRadius, 0.f };
+
+		Vector vCandidate = crumb.vec + vOffset;
+		Vector vSnapped = pArea->getNearestPoint(Vector2D(vCandidate.x, vCandidate.y));
+		crumb.vec.x = vSnapped.x;
+		crumb.vec.y = vSnapped.y;
+		crumb.vec.z = vSnapped.z;
+	};
+
 	for (size_t i = 0; i < path.size(); i++)
 	{
 		auto area = reinterpret_cast<CNavArea*>(path.at(i));
@@ -639,6 +745,7 @@ bool CNavEngine::navTo(const Vector& destination, int priority, bool should_repa
 			CNavParser::Crumb startCrumb{};
 			startCrumb.navarea = area;
 			startCrumb.vec = points.current;
+			randomizeCrumb(startCrumb, area);
 			crumbs.push_back(startCrumb);
 
 			CNavParser::Crumb centerCrumb{};
@@ -648,13 +755,35 @@ bool CNavEngine::navTo(const Vector& destination, int priority, bool should_repa
 			centerCrumb.dropHeight = dropdown.dropHeight;
 			centerCrumb.approachDistance = dropdown.approachDistance;
 			centerCrumb.approachDir = dropdown.approachDir;
+			randomizeCrumb(centerCrumb, area);
 			crumbs.push_back(centerCrumb);
 		}
 		else
-			crumbs.push_back({ area, area->m_center });
+		{
+			CNavParser::Crumb endCrumb{ area, area->m_center };
+			randomizeCrumb(endCrumb, area);
+			crumbs.push_back(endCrumb);
+		}
 	}
 
 	crumbs.push_back({ nullptr, destination });
+
+	if (bRandomizePath && map && map->pathRandomHeatWeight > 0.f)
+	{
+		std::unordered_set<CNavArea*> updated;
+		const float flHeatAdd = std::lerp(0.18f, 1.35f, map->pathRandomHeatWeight);
+		const float flMaxHeat = std::lerp(1.4f, 6.2f, map->pathRandomHeatWeight);
+		for (void* entry : path)
+		{
+			auto pArea = reinterpret_cast<CNavArea*>(entry);
+			if (!pArea)
+				continue;
+			if (!updated.insert(pArea).second)
+				continue;
+			float& heat = map->pathHeat[pArea];
+			heat = std::min(heat * 0.65f + flHeatAdd, flMaxHeat);
+		}
+	}
 	inactivity.Update();
 
 	current_priority = priority;

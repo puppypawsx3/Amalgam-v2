@@ -1535,6 +1535,19 @@ void CMenu::MenuMisc(int iTab)
 					}
 					PopTransparent();
 				} EndSection();
+				if (Section("Pathing"))
+				{
+					PushTransparent(!bLegitFeatures || !bLegitLookActive);
+					{
+						FSlider(Vars::Misc::Movement::LegitBot::PathRandomization, FSliderEnum::Left);
+						PushTransparent(Vars::Misc::Movement::LegitBot::PathRandomization.Value <= 0.f);
+						{
+							FText("Adds small random offsets to nav nodes.");
+						}
+						PopTransparent();
+					}
+					PopTransparent();
+				} EndSection();
 			}
 
 			/* Column 2 */
