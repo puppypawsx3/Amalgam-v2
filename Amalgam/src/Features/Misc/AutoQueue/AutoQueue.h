@@ -20,6 +20,8 @@ private:
 	bool m_bConnectedToCommunityServer = false;
 	std::string m_sLastLevelName;
 	bool m_bNavmeshAbandonTriggered = false;
+	float m_flAutoDumpStartTime = 0.0f;
+	bool m_bAutoDumpedThisMatch = false;
 
 	void RunCommunityQueue();
 	void SearchCommunityServers();

@@ -973,6 +973,8 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(FreezeQueue, "Freeze queue", false);
 			CVar(AutoCasualQueue, "Auto casual queue", false);
 			CVar(AutoCasualJoin, "Auto casual join", false);
+			CVar(AutoDumpNames, "Auto dump names", false);
+			CVar(AutoDumpDelay, "Auto dump delay", 15, SLIDER_CLAMP, 0, 120, 1, "%is");
 			#ifdef TEXTMODE
 			CVar(AutoAbandonIfNoNavmesh, "Auto abandon if no navmesh", true);
 			#else

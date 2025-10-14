@@ -1441,7 +1441,15 @@ void CMenu::MenuMisc(int iTab)
 					FToggle(Vars::Misc::Queueing::AutoCasualQueue, FToggleEnum::Right);
 					FToggle(Vars::Misc::Queueing::AutoMannUpQueue, FToggleEnum::Left);
 					PushTransparent(!Vars::Misc::Queueing::AutoCasualQueue.Value);
+					{
 						FToggle(Vars::Misc::Queueing::AutoAbandonIfNoNavmesh, FToggleEnum::Right);
+						FToggle(Vars::Misc::Queueing::AutoDumpNames, FToggleEnum::Left);
+						PushTransparent(!Vars::Misc::Queueing::AutoDumpNames.Value);
+						{
+							FSlider(Vars::Misc::Queueing::AutoDumpDelay);
+						}
+						PopTransparent();
+					}
 					PopTransparent();
 					FSlider(Vars::Misc::Queueing::QueueDelay, FSliderEnum::None);
 					FToggle(Vars::Misc::Queueing::RQif, FToggleEnum::Left);

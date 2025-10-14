@@ -254,6 +254,13 @@ static std::unordered_map<uint32_t, CommandCallback> s_mCommands = {
 		}
 	},
 	{
+		FNV1A::Hash32Const("cat_dumpnames"),
+		[](const std::deque<const char*>& vArgs)
+		{
+			F::Misc.DumpNames();
+		}
+	},
+	{
 		FNV1A::Hash32Const("cat_crash"), 
 		[](const std::deque<const char*>& vArgs)
 		{	// if you want to time out of a server and rejoin
