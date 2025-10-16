@@ -97,12 +97,12 @@ bool CTraceFilterCollideable::ShouldHitEntity(IHandleEntity* pServerEntity, int 
 	case ETFClassID::CObjectSentrygun:
 	case ETFClassID::CObjectDispenser: return iObject == OBJECT_ALL ? true : iObject == OBJECT_NONE ? false : pEntity->m_iTeamNum() != iTeam;
 	case ETFClassID::CObjectTeleporter: return true;
-	//case ETFClassID::CTFBaseBoss:
-	//case ETFClassID::CTFTankBoss:
-	//case ETFClassID::CMerasmus:
-	//case ETFClassID::CEyeballBoss:
-	//case ETFClassID::CHeadlessHatman:
-	//case ETFClassID::CZombie:
+	case ETFClassID::CTFBaseBoss:
+	case ETFClassID::CTFTankBoss:
+	case ETFClassID::CMerasmus:
+	case ETFClassID::CEyeballBoss:
+	case ETFClassID::CHeadlessHatman:
+	case ETFClassID::CZombie:
 	case ETFClassID::CTFGrenadePipebombProjectile:
 		return bMisc ? true : false;
 	}
@@ -144,7 +144,7 @@ bool CTraceFilterWorldAndPropsOnly::ShouldHitEntity(IHandleEntity* pServerEntity
 }
 TraceType_t CTraceFilterWorldAndPropsOnly::GetTraceType() const
 {
-	return TRACE_EVERYTHING_FILTER_PROPS;
+	return TRACE_EVERYTHING;
 }
 
 #define MOVEMENT_COLLISION_GROUP 8

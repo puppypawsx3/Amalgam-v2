@@ -758,6 +758,34 @@ void CMisc::Event(IGameEvent* pEvent, uint32_t uHash)
 	case FNV1A::Hash32Const("player_spawn"):
 		m_bPeekPlaced = false;
 		break;
+	case FNV1A::Hash32Const("player_death"):
+	{
+		if (!Vars::Misc::Automation::AutoTaunt.Value)
+			break;
+
+		const auto pLocal = H::Entities.GetLocal();
+		if (!pLocal || !pLocal->IsAlive())
+			break;
+
+		if (pLocal->IsTaunting() || pLocal->InCond(TF_COND_HALLOWEEN_KART))
+			break;
+
+		const int iLocalPlayer = I::EngineClient->GetLocalPlayer();
+		const int iAttacker = I::EngineClient->GetPlayerForUserID(pEvent->GetInt("attacker"));
+		const int iVictim = I::EngineClient->GetPlayerForUserID(pEvent->GetInt("userid"));
+		if (iAttacker != iLocalPlayer || iAttacker == iVictim)
+			break;
+
+		const int iChance = std::clamp(Vars::Misc::Automation::AutoTauntChance.Value, 0, 100);
+		if (!iChance)
+			break;
+
+		if (SDK::RandomInt(1, 100) > iChance)
+			break;
+
+		I::EngineClient->ClientCmd_Unrestricted("taunt");
+		break;
+	}
 	case FNV1A::Hash32Const("vote_maps_changed"):
 		if (Vars::Misc::Automation::AutoVoteMap.Value)
 		{

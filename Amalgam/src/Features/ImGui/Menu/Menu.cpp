@@ -1207,6 +1207,12 @@ void CMenu::MenuMisc(int iTab)
 					FToggle(Vars::Misc::Automation::AntiAutobalance, FToggleEnum::Right);
 					FToggle(Vars::Misc::Automation::TauntControl, FToggleEnum::Left);
 					FToggle(Vars::Misc::Automation::KartControl, FToggleEnum::Right);
+					FToggle(Vars::Misc::Automation::AutoTaunt, FToggleEnum::Left);
+					PushTransparent(!Vars::Misc::Automation::AutoTaunt.Value);
+					{
+						FSlider(Vars::Misc::Automation::AutoTauntChance, FSliderEnum::Right);
+					}
+					PopTransparent();
 					FToggle(Vars::Misc::Automation::AutoF2Ignored, FToggleEnum::Left);
 					FToggle(Vars::Misc::Automation::AutoF1Priority, FToggleEnum::Right);
 					FDropdown(Vars::Misc::Automation::AutoVotekick);
