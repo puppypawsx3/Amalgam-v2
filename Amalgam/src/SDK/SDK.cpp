@@ -415,24 +415,27 @@ bool SDK::CheckSeam(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& 
 	if (!Vars::Aimbot::General::Seamshot.Value)
 		return false;
 
+	static const Vec3 vOffsets[] = {
+		{ 0.01f, 0.f, 0.f }, { -0.01f, 0.f, 0.f },
+		{ 0.f, 0.01f, 0.f }, { 0.f, -0.01f, 0.f },
+		{ 0.f, 0.f, 0.01f }, { 0.f, 0.f, -0.01f },
+		{ 0.01f, 0.01f, 0.f }, { 0.01f, -0.01f, 0.f },
+		{ -0.01f, 0.01f, 0.f }, { -0.01f, -0.01f, 0.f },
+		{ 0.01f, 0.f, 0.01f }, { 0.01f, 0.f, -0.01f },
+		{ -0.01f, 0.f, 0.01f }, { -0.01f, 0.f, -0.01f },
+		{ 0.f, 0.01f, 0.01f }, { 0.f, 0.01f, -0.01f },
+		{ 0.f, -0.01f, 0.01f }, { 0.f, -0.01f, -0.01f }
+	};
+
 	CGameTrace trace = {};
 	CTraceFilterHitscan filter = {};
 	filter.pSkip = pSkip;
 
-	for (float x = -0.01f; x <= 0.01f; x += 0.01f)
+	for (const auto& vOffset : vOffsets)
 	{
-		for (float y = -0.01f; y <= 0.01f; y += 0.01f)
-		{
-			for (float z = -0.01f; z <= 0.01f; z += 0.01f)
-			{
-				if (x == 0.f && y == 0.f && z == 0.f)
-					continue;
-
-				Trace(vFrom, vTo + Vec3(x, y, z), nMask, &filter, &trace);
-				if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
-					return true;
-			}
-		}
+		Trace(vFrom, vTo + vOffset, nMask, &filter, &trace);
+		if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
+			return true;
 	}
 
 	return false;
@@ -443,24 +446,27 @@ bool SDK::CheckSeamHull(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Ve
 	if (!Vars::Aimbot::General::Seamshot.Value)
 		return false;
 
+	static const Vec3 vOffsets[] = {
+		{ 0.01f, 0.f, 0.f }, { -0.01f, 0.f, 0.f },
+		{ 0.f, 0.01f, 0.f }, { 0.f, -0.01f, 0.f },
+		{ 0.f, 0.f, 0.01f }, { 0.f, 0.f, -0.01f },
+		{ 0.01f, 0.01f, 0.f }, { 0.01f, -0.01f, 0.f },
+		{ -0.01f, 0.01f, 0.f }, { -0.01f, -0.01f, 0.f },
+		{ 0.01f, 0.f, 0.01f }, { 0.01f, 0.f, -0.01f },
+		{ -0.01f, 0.f, 0.01f }, { -0.01f, 0.f, -0.01f },
+		{ 0.f, 0.01f, 0.01f }, { 0.f, 0.01f, -0.01f },
+		{ 0.f, -0.01f, 0.01f }, { 0.f, -0.01f, -0.01f }
+	};
+
 	CGameTrace trace = {};
 	CTraceFilterCollideable filter = {};
 	filter.pSkip = pSkip;
 
-	for (float x = -0.01f; x <= 0.01f; x += 0.01f)
+	for (const auto& vOffset : vOffsets)
 	{
-		for (float y = -0.01f; y <= 0.01f; y += 0.01f)
-		{
-			for (float z = -0.01f; z <= 0.01f; z += 0.01f)
-			{
-				if (x == 0.f && y == 0.f && z == 0.f)
-					continue;
-
-				TraceHull(vFrom, vTo + Vec3(x, y, z), vHullMin, vHullMax, nMask, &filter, &trace);
-				if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
-					return true;
-			}
-		}
+		TraceHull(vFrom, vTo + vOffset, vHullMin, vHullMax, nMask, &filter, &trace);
+		if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
+			return true;
 	}
 
 	return false;

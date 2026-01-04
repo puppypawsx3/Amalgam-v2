@@ -126,7 +126,17 @@ void CMisc::AutoJumpbug(CTFPlayer* pLocal, CUserCmd* pCmd)
 
 void CMisc::AutoWallbug(CTFPlayer* pLocal, CUserCmd* pCmd)
 {
-	if (!Vars::Misc::Movement::AutoWallbug.Value || pLocal->m_hGroundEntity() || pLocal->m_vecVelocity().z >= -0.5f)
+	if (!Vars::Misc::Movement::AutoWallbug.Value || pLocal->m_hGroundEntity())
+		return;
+
+	if (pLocal->m_vecVelocity().z == 0.f && !pLocal->m_hGroundEntity())
+	{
+		pCmd->forwardmove = 0.f;
+		pCmd->sidemove = 0.f;
+		return;
+	}
+
+	if (pLocal->m_vecVelocity().z >= -0.5f)
 		return;
 
 	CGameTrace trace = {};
@@ -148,11 +158,11 @@ void CMisc::AutoWallbug(CTFPlayer* pLocal, CUserCmd* pCmd)
 		case 3: vDir = { 0.f, -1.f, 0.f }; break;
 		}
 
-		SDK::TraceHull(vOrigin, vOrigin + vDir * 1.f, vMins, vMaxs, pLocal->SolidMask(), &filter, &trace);
+		SDK::TraceHull(vOrigin, vOrigin + vDir * 2.f, vMins, vMaxs, pLocal->SolidMask(), &filter, &trace);
 
 		if (trace.DidHit() && !trace.allsolid)
 		{
-			if (trace.fraction * 1.f < 0.03125f)
+			if (trace.fraction * 2.f < 1.f)
 			{
 				pCmd->forwardmove = vDir.x * 450.f;
 				pCmd->sidemove = vDir.y * 450.f;
