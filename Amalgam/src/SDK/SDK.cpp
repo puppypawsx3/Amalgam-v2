@@ -367,7 +367,13 @@ bool SDK::VisPos(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& vFr
 	filter.pSkip = pSkip;
 	Trace(vFrom, vTo, nMask, &filter, &trace);
 	if (trace.DidHit())
-		return trace.m_pEnt && trace.m_pEnt == pEntity;
+	{
+		if (trace.m_pEnt == pEntity)
+			return true;
+		if (trace.m_pEnt && trace.m_pEnt->GetClassID() == ETFClassID::CWorld)
+			return CheckSeam(pSkip, pEntity, vFrom, vTo, nMask);
+		return false;
+	}
 	return true;
 }
 bool SDK::VisPosCollideable(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& vFrom, const Vec3& vTo, unsigned int nMask)
@@ -378,7 +384,13 @@ bool SDK::VisPosCollideable(CBaseEntity* pSkip, const CBaseEntity* pEntity, cons
 	filter.iType = SKIP_CHECK;
 	Trace(vFrom, vTo, nMask, &filter, &trace);
 	if (trace.DidHit())
-		return trace.m_pEnt && trace.m_pEnt == pEntity;
+	{
+		if (trace.m_pEnt == pEntity)
+			return true;
+		if (trace.m_pEnt && trace.m_pEnt->GetClassID() == ETFClassID::CWorld)
+			return CheckSeam(pSkip, pEntity, vFrom, vTo, nMask);
+		return false;
+	}
 	return true;
 }
 bool SDK::VisPosWorld(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& vFrom, const Vec3& vTo, unsigned int nMask)
@@ -388,8 +400,70 @@ bool SDK::VisPosWorld(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3
 	filter.pSkip = pSkip;
 	Trace(vFrom, vTo, nMask, &filter, &trace);
 	if (trace.DidHit())
-		return trace.m_pEnt && trace.m_pEnt == pEntity;
+	{
+		if (trace.m_pEnt == pEntity)
+			return true;
+		if (trace.m_pEnt && trace.m_pEnt->GetClassID() == ETFClassID::CWorld)
+			return CheckSeam(pSkip, pEntity, vFrom, vTo, nMask);
+		return false;
+	}
 	return true;
+}
+
+bool SDK::CheckSeam(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& vFrom, const Vec3& vTo, unsigned int nMask)
+{
+	if (!Vars::Aimbot::General::Seamshot.Value)
+		return false;
+
+	CGameTrace trace = {};
+	CTraceFilterHitscan filter = {};
+	filter.pSkip = pSkip;
+
+	for (float x = -0.01f; x <= 0.01f; x += 0.01f)
+	{
+		for (float y = -0.01f; y <= 0.01f; y += 0.01f)
+		{
+			for (float z = -0.01f; z <= 0.01f; z += 0.01f)
+			{
+				if (x == 0.f && y == 0.f && z == 0.f)
+					continue;
+
+				Trace(vFrom, vTo + Vec3(x, y, z), nMask, &filter, &trace);
+				if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
+					return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+bool SDK::CheckSeamHull(CBaseEntity* pSkip, const CBaseEntity* pEntity, const Vec3& vFrom, const Vec3& vTo, const Vec3& vHullMin, const Vec3& vHullMax, unsigned int nMask)
+{
+	if (!Vars::Aimbot::General::Seamshot.Value)
+		return false;
+
+	CGameTrace trace = {};
+	CTraceFilterCollideable filter = {};
+	filter.pSkip = pSkip;
+
+	for (float x = -0.01f; x <= 0.01f; x += 0.01f)
+	{
+		for (float y = -0.01f; y <= 0.01f; y += 0.01f)
+		{
+			for (float z = -0.01f; z <= 0.01f; z += 0.01f)
+			{
+				if (x == 0.f && y == 0.f && z == 0.f)
+					continue;
+
+				TraceHull(vFrom, vTo + Vec3(x, y, z), vHullMin, vHullMax, nMask, &filter, &trace);
+				if (!trace.DidHit() || (trace.m_pEnt && trace.m_pEnt == pEntity))
+					return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 Vec3 SDK::PredictOrigin(Vec3& vOrigin, Vec3 vVelocity, float flLatency, bool bTrace, Vec3 vMins, Vec3 vMaxs, unsigned int nMask, float flNormal)

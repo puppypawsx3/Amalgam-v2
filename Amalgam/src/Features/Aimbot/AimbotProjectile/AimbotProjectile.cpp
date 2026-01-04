@@ -1245,6 +1245,9 @@ bool CAimbotProjectile::TestAngle(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, Tar
 		}
 		if (trace.DidHit())
 		{
+			if (trace.m_pEnt && trace.m_pEnt->GetClassID() == ETFClassID::CWorld && SDK::CheckSeamHull(bSplash ? tTarget.m_pEntity : pLocal, tTarget.m_pEntity, bSplash ? vStaticPos : vOld, vNew, tProjInfo.m_vHull * -1, tProjInfo.m_vHull, nMask))
+				continue;
+
 			if (pHitSolid)
 				*pHitSolid = true;
 
@@ -2026,6 +2029,9 @@ bool CAimbotProjectile::TestAngle(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CBa
 		}
 		if (trace.DidHit())
 		{
+			if (trace.m_pEnt && trace.m_pEnt->GetClassID() == ETFClassID::CWorld && SDK::CheckSeamHull(bSplash ? tTarget.m_pEntity : pLocal, tTarget.m_pEntity, bSplash ? vStaticPos : vOld, vNew, tProjInfo.m_vHull * -1, tProjInfo.m_vHull, nMask))
+				continue;
+
 			bool bTime = bSplash
 				? trace.endpos.DistTo(vPoint) < tProjInfo.m_flVelocity * TICK_INTERVAL + tProjInfo.m_vHull.z
 				: iSimTime - n < 5;

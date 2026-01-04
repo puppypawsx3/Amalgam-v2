@@ -305,6 +305,7 @@ namespace Vars
 			CVar(NoSpread, "No spread", false);
 			CVar(PrioritizeNavbot, "Prioritize navbot target", false);
 			CVar(PrioritizeFollowbot, "Prioritize followbot target", false);
+			CVar(Seamshot, "Seamshot", false);
 			CVar(DisableOnSpectate, "Disable on spectate", false);
 
 			CVarEnum(AimHoldsFire, "Aim holds fire", 2, NOSAVE | DEBUGVAR, nullptr,
