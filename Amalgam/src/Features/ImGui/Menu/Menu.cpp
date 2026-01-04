@@ -1385,8 +1385,9 @@ void CMenu::MenuMisc(int iTab)
 					PopTransparent();
 					FToggle(Vars::Misc::Movement::Bunnyhop, FToggleEnum::Left);
 					FToggle(Vars::Misc::Movement::EdgeJump, FToggleEnum::Right);
-					FToggle(Vars::Misc::Movement::AutoJumpbug, FToggleEnum::Left); // this is unreliable without setups, do not depend on it!
-					FToggle(Vars::Misc::Movement::NoPush, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::AutoJumpbug, FToggleEnum::Left);
+					FToggle(Vars::Misc::Movement::AutoWallbug, FToggleEnum::Right);
+					FToggle(Vars::Misc::Movement::NoPush, FToggleEnum::Left);
 					FToggle(Vars::Misc::Movement::AutoRocketJump, FToggleEnum::Left);
 					FToggle(Vars::Misc::Movement::AutoCTap, FToggleEnum::Right);
 					FToggle(Vars::Misc::Movement::FastStop, FToggleEnum::Left);

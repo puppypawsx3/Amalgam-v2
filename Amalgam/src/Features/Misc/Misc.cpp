@@ -40,6 +40,7 @@ void CMisc::RunPre(CTFPlayer* pLocal, CUserCmd* pCmd)
 	AutoJump(pLocal, pCmd);
 	EdgeJump(pLocal, pCmd);
 	AutoJumpbug(pLocal, pCmd);
+	AutoWallbug(pLocal, pCmd);
 	AutoStrafe(pLocal, pCmd);
 	AutoPeek(pLocal, pCmd);
 	BreakJump(pLocal, pCmd);
@@ -121,6 +122,45 @@ void CMisc::AutoJumpbug(CTFPlayer* pLocal, CUserCmd* pCmd)
 
 	pCmd->buttons &= ~IN_DUCK;
 	pCmd->buttons |= IN_JUMP;
+}
+
+void CMisc::AutoWallbug(CTFPlayer* pLocal, CUserCmd* pCmd)
+{
+	if (!Vars::Misc::Movement::AutoWallbug.Value || pLocal->m_hGroundEntity() || pLocal->m_vecVelocity().z >= -0.5f)
+		return;
+
+	CGameTrace trace = {};
+	CTraceFilterWorldAndPropsOnly filter = {};
+	filter.pSkip = pLocal;
+
+	Vec3 vOrigin = pLocal->m_vecOrigin();
+	Vec3 vMins = pLocal->m_vecMins();
+	Vec3 vMaxs = pLocal->m_vecMaxs();
+
+	for (int i = 0; i < 4; i++)
+	{
+		Vec3 vDir = {};
+		switch (i)
+		{
+		case 0: vDir = { 1.f, 0.f, 0.f }; break;
+		case 1: vDir = { -1.f, 0.f, 0.f }; break;
+		case 2: vDir = { 0.f, 1.f, 0.f }; break;
+		case 3: vDir = { 0.f, -1.f, 0.f }; break;
+		}
+
+		SDK::TraceHull(vOrigin, vOrigin + vDir * 1.f, vMins, vMaxs, pLocal->SolidMask(), &filter, &trace);
+
+		if (trace.DidHit() && !trace.allsolid)
+		{
+			if (trace.fraction * 1.f < 0.03125f)
+			{
+				pCmd->forwardmove = vDir.x * 450.f;
+				pCmd->sidemove = vDir.y * 450.f;
+				SDK::FixMovement(pCmd, pCmd->viewangles);
+				return;
+			}
+		}
+	}
 }
 
 void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)

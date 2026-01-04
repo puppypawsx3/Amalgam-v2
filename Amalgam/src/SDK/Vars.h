@@ -779,6 +779,7 @@ I dont think this is a good idea to disable simulations completely:
 			CVar(Bunnyhop, "Bunnyhop", false);
 			CVar(EdgeJump, "Edge jump", false);
 			CVar(AutoJumpbug, "Auto jumpbug", false);
+			CVar(AutoWallbug, "Auto wallbug", false);
 			CVar(NoPush, "No push", false);
 			CVar(AutoRocketJump, "Auto rocket jump", false);
 			CVar(AutoCTap, "Auto ctap", false);
